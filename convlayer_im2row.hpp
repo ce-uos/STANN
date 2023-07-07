@@ -129,7 +129,8 @@ void im2row(hls::stream<T> &input, hls::stream<T> &output, int reps) {
                         for (int fh = 0; fh < FILTER_SIZE; fh++){
                         #pragma HLS pipeline II=3
                             output_buffer[ow +  oh * OUTPUT_WI + fw * OUTPUT_HI * OUTPUT_WI + fh*OUTPUT_HI * OUTPUT_WI*FILTER_SIZE + ic *OUTPUT_HI * OUTPUT_WI*FILTER_SIZE*FILTER_SIZE ]
-                                = input_buffer[ow + oh + oh * OUTPUT_WI + fw + fh * INPUT_WI + ic * INPUT_WI * INPUT_HI ];
+                                = input_buffer[ic * INPUT_WI * INPUT_HI + (oh+fh) * INPUT_WI + (ow+fw)];
+                                //= input_buffer[ow + oh + oh * OUTPUT_WI + fw + fh * INPUT_WI + ic * INPUT_WI * INPUT_HI ];
 
                         }
                     }
@@ -169,12 +170,16 @@ void conv_base(hls::stream<float> &input, float *kernel, hls::stream<float> &out
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<KERNEL_SIZE*KERNEL_SIZE*INPUT_CHANNELS*OUTPUT_WI*OUTPUT_HI>(input, input_buffer, 1);
 
+        // standard image sizes: C x H x W
+        // direct convolution kernel format: OC x IC x K^2
+
+        // Kernel matrix: OC x (K^2 * IC)
+        // im2row matrix: (K^2 * IC) x (H * W)
+        // Output: OC x (H * W)
         Matrix::blockmatmul<OUTPUT_CHANNELS,KERNEL_SIZE*KERNEL_SIZE*INPUT_CHANNELS,OUTPUT_WI*OUTPUT_HI,PE1,PE2,PE3,float,80>(kernel, input_buffer, output_buffer);
 
         StreamUtil::tostream<OUTPUT_WI * OUTPUT_HI * OUTPUT_CHANNELS>(output_buffer, output, 1);
-
     }
-
 }
 
 /**

@@ -35,33 +35,26 @@ namespace {
  */
 template<int INPUT_WI, int INPUT_HI, int INPUT_CHANNEL, int INPUT_BATCH_SIZE, int FILTER_WI, int FILTER_HI, int OUTPUT_CHANNEL, typename T>
 void forward_convolution_base(T *input,T *filter, T *output){
-    const int OUTPUT_WI = INPUT_WI - FILTER_WI + 1;
-    const int OUTPUT_HI = INPUT_HI - FILTER_HI + 1;
-    for (int ibs = 0; ibs < INPUT_BATCH_SIZE; ibs++){
-        for(int fd = 0; fd < OUTPUT_CHANNEL; fd++){
-            for(int oh = 0; oh < OUTPUT_HI ; oh++){
-                for(int ow = 0; ow < OUTPUT_WI ; ow++){
-                    for(int ic = 0; ic < INPUT_CHANNEL; ic++){
-                        for(int h = 0; h < FILTER_HI; h++){
-                            for(int w = 0; w < FILTER_WI; w++){
-                            #pragma HLS PIPELINE II=3
-                                int INPUT_BATCH_SIZEInputOverhead  = ibs * INPUT_WI * INPUT_HI * INPUT_CHANNEL ;
-                                int INPUT_BATCH_SIZEOutputOverhead = ibs * OUTPUT_WI * OUTPUT_HI * OUTPUT_CHANNEL;
-                                int currentOutputElement     = oh * OUTPUT_WI + ow +  fd  * OUTPUT_HI * OUTPUT_WI + INPUT_BATCH_SIZEOutputOverhead;
-                                int currentInputElement = ic  * INPUT_HI * INPUT_WI + ow + w + (oh + h) * INPUT_WI + INPUT_BATCH_SIZEInputOverhead;
-                                int currentFilterElement =  (fd * INPUT_CHANNEL + ic) * FILTER_HI * FILTER_WI + w + h * FILTER_WI;
-
-                                if (ic == 0 && h == 0 && w == 0) {
-                                    output[currentOutputElement] = 0;
-                                }
-                                output[currentOutputElement] += input[currentInputElement] * filter[currentFilterElement];
-
+    const int OUTPUT_HI = INPUT_HI - (FILTER_HI-1);
+    const int OUTPUT_WI = INPUT_WI - (FILTER_WI-1);
+    for(int ib = 0; ib < INPUT_BATCH_SIZE; ib ++){
+        for(int kd = 0; kd < OUTPUT_CHANNEL; kd ++){
+            for(int y = 0; y <= INPUT_HI - FILTER_HI; y += 1){
+                for(int x = 0; x <= INPUT_WI - FILTER_WI; x += 1){
+                    int output_idx = x + y * OUTPUT_HI + (kd + ib * OUTPUT_CHANNEL) * OUTPUT_WI * OUTPUT_HI;
+                    output[output_idx] = 0;
+                    for(int c = 0 ; c < INPUT_CHANNEL; c ++){
+                        for(int ky = 0; ky < FILTER_HI; ky ++){
+                            for(int kx = 0; kx < FILTER_WI; kx ++){
+                                #pragma HLS PIPELINE II=3
+                                output[output_idx] +=
+                                input[(ib * INPUT_CHANNEL + c) * INPUT_WI * INPUT_HI + (y + ky) * INPUT_WI + (x + kx)] *
+                                filter[(kd * INPUT_CHANNEL + c) * FILTER_WI * FILTER_HI + ky * FILTER_WI + kx];
                             }
                         }
                     }
                 }
             }
-
         }
     }
 }
@@ -236,7 +229,7 @@ void forward(float *input, float *weights, float *bias, float *output, activatio
         for(int fd = 0; fd < FILTER_DEPTH; fd++){
             for (int ow = 0; ow < OUTPUT_WI * OUTPUT_HI; ow++){
             #pragma HLS PIPELINE II=2
-                output[ow + fd * OUTPUT_WI *OUTPUT_HI ] += bias[fd + FILTER_DEPTH * ibs];
+                output[ow + fd * OUTPUT_WI *OUTPUT_HI ] += bias[fd];//bias[fd + FILTER_DEPTH * ibs];
             }
         }
     }
@@ -244,6 +237,18 @@ void forward(float *input, float *weights, float *bias, float *output, activatio
     if (act == LEAKY_RELU){
         ActivationLayer::Float::leaky_relu_inplace<OUTPUT_WI*OUTPUT_HI*FILTER_DEPTH, INPUT_BATCH_SIZE>(output);
     }
+}
+
+template<int INPUT_HEIGHT, int INPUT_WIDTH, int INPUT_CHANNELS, int OUTPUT_CHANNELS, int KERNEL_SIZE, int INPUT_BATCH_SIZE, int PE1, int PE2, int PE3>
+void forward_stream(hls::stream<float> &input_stream, float *weights, float *bias, hls::stream<float> &output_stream, activation_t act){
+    float input[INPUT_WIDTH*INPUT_HEIGHT*INPUT_CHANNELS*INPUT_BATCH_SIZE];
+    float output[(INPUT_WIDTH-4)*(INPUT_HEIGHT-4)*OUTPUT_CHANNELS*INPUT_BATCH_SIZE];
+
+    StreamUtil::toarray<INPUT_WIDTH*INPUT_HEIGHT*INPUT_CHANNELS*INPUT_BATCH_SIZE>(input_stream, input);
+
+    forward<INPUT_WIDTH, INPUT_HEIGHT, INPUT_CHANNELS, INPUT_BATCH_SIZE, KERNEL_SIZE, KERNEL_SIZE, OUTPUT_CHANNELS>(input, weights, bias, output, act);
+
+    StreamUtil::tostream<(INPUT_WIDTH-4)*(INPUT_HEIGHT-4)*OUTPUT_CHANNELS*INPUT_BATCH_SIZE>(output, output_stream);
 }
 
 /**
