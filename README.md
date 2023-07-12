@@ -6,7 +6,7 @@ This project cannot be synthesized on its own but can be used by other projects 
 
 # Example project
 
-The following project demonstrates how to use STANN to implement LeNet-5 and TenNet (simple neural network with 10 layers): (link added soon)
+The following project demonstrates how to use STANN to implement LeNet-5 and TenNet (simple neural network with 10 layers): https://github.com/ce-uos/stann-example
 
 # Citation
 
