@@ -174,8 +174,8 @@ void matmul(T *input, T *stationary_input, T *output) {
         input_buffer_top[i] = 0;
     }
 
-    //for (int t = K*2-2 + M + N; t > 0; t--) {
-    for (int t = M + N; t > 0; t--) {
+    for (int t = K*2-2 + M + N; t > 0; t--) {
+    //for (int t = M + N; t > 0; t--) {
     #pragma HLS unroll factor=1
 
         // move input_buffer_left to the right
