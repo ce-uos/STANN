@@ -64,7 +64,7 @@ void MeanSquaredError_derivative(T *output, T *target, T *derr) {
 
     for (int i = 0; i < OUTPUT_DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
-            derr[j * OUTPUT_DIM + i] = (output[i * BATCH_SIZE + j] - target[j * OUTPUT_DIM + i]);// / BATCH_SIZE;
+            derr[j * OUTPUT_DIM + i] = (output[i * BATCH_SIZE + j] - target[j * OUTPUT_DIM + i]) / 4 / BATCH_SIZE;
         }
     }
 }
@@ -93,7 +93,7 @@ void MeanSquaredError_derivative_stream(hls::stream<T> &output, hls::stream<T> &
 
     for (int i = 0; i < OUTPUT_DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
-            derr_buffer[j * OUTPUT_DIM + i] = -(target_buffer[i * BATCH_SIZE + j] - output_buffer[j * OUTPUT_DIM + i]) / BATCH_SIZE;
+            derr_buffer[j * OUTPUT_DIM + i] = -(target_buffer[i * BATCH_SIZE + j] - output_buffer[j * OUTPUT_DIM + i]) / 4 / BATCH_SIZE;
         }
     }
 

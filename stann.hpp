@@ -25,8 +25,4 @@
 #include "convlayer_im2row.hpp"
 #include "poolinglayers.hpp"
 
-#ifdef STANN_UNIT_TEST
-    #include "stann_testable.hpp"
-#endif
-
 #endif
