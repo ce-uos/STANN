@@ -618,6 +618,8 @@ void blockmatmul_full(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
 
 /**
  * Block matrix multiplication with stream as second input and output
+ * (E.g., used in DenseLayerStream inference.)
+ *
  * "A" should have dimensions KxM.
  * "B" should have dimensions MxN.
  * "A" will be sliced into sub-matrices of size BKxBM.

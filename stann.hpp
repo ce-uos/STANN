@@ -21,9 +21,12 @@
 #include "denselayer_stream.hpp"
 
 #include "convlayer.hpp"
-//#include "convlayer_winograd.hpp"
 #include "convlayer_kn2row.hpp"
 #include "convlayer_im2row.hpp"
 #include "poolinglayers.hpp"
+
+#ifdef STANN_UNIT_TEST
+    #include "stann_testable.hpp"
+#endif
 
 #endif
