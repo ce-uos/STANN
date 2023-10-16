@@ -1,5 +1,3 @@
-#define STANN_UNIT_TEST
-
 #include <cstdio>
 #include <cstdlib>
 
@@ -7,7 +5,7 @@
 #include "hls_stream.h"
 #include "ap_axi_sdata.h"
 
-#include "../stann_testable.hpp"
+#include "../stann.hpp"
 
 #define TEST_PASSED 0
 #define TEST_FAILED (-1)
@@ -63,9 +61,9 @@ int test_matmul_square() {
 
     simple_matmul<4,4,4>(a, b, baseline);
 
-    stann_sysarr_blockmatmul_4_4_4_1_1_1(a,b,out0);
-    stann_sysarr_blockmatmul_4_4_4_1_1_1(a,b,out1);
-    stann_sysarr_blockmatmul_4_4_4_1_1_1(a,b,out2);
+    MatrixUtil::SysArr::blockmatmul<4,4,4,1,1,1,float>(a,b,out0);
+    MatrixUtil::SysArr::blockmatmul<4,4,4,4,4,4,float>(a,b,out1);
+    MatrixUtil::SysArr::blockmatmul<4,4,4,4,2,1,float>(a,b,out2);
 
     for (int i = 0; i < 16; i++) {
         if (baseline[i] != out0[i]) {
@@ -141,10 +139,10 @@ int test_matmul_nonsquare() {
     simple_matmul<8,8,8>(a, b, baseline);
     simple_matmul<8,8,1>(a, b2, baseline2);
 
-    stann_sysarr_blockmatmul_8_8_8_4_2_4(a,b,out0);
-    stann_sysarr_blockmatmul_8_8_8_1_8_1(a,b,out1);
-    stann_sysarr_blockmatmul_8_8_8_8_4_2(a,b,out2);
-    stann_sysarr_blockmatmul_8_8_1_2_4_1(a,b2,out3);
+    MatrixUtil::SysArr::blockmatmul<8,8,8,4,2,4,float>(a,b,out0);
+    MatrixUtil::SysArr::blockmatmul<8,8,8,1,8,1,float>(a,b,out1);
+    MatrixUtil::SysArr::blockmatmul<8,8,8,8,4,2,float>(a,b,out2);
+    MatrixUtil::SysArr::blockmatmul<8,8,1,2,4,1,float>(a,b2,out3);
 
     for (int i = 0; i < 64; i++) {
         if (baseline[i] != out0[i]) {
@@ -221,9 +219,20 @@ int test_matmul_stream() {
     simple_matmul<4,4,1>(a, b, baseline);
     simple_matmul<8,8,1>(a2, b2, baseline2);
 
-    stann_stream_blockmatmul_4_4_1_1(a,b,out0);
-    stann_stream_blockmatmul_4_4_4_4(a,b,out1);
-    stann_stream_blockmatmul_8_8_2_4(a2,b2,out2);
+    hls::stream<float> b_stream("b_stream");
+    hls::stream<float> c_stream("c_stream");
+
+    StreamUtil::tostream<4, float>(b, b_stream);
+    MatrixUtilStream::blockmatmul<4,4,1,1,float>(a, b_stream, c_stream, 1);
+    StreamUtil::toarray<4, float>(c_stream, out0);
+
+    StreamUtil::tostream<4, float>(b, b_stream);
+    MatrixUtilStream::blockmatmul<4,4,4,4,float>(a, b_stream, c_stream, 1);
+    StreamUtil::toarray<4, float>(c_stream, out1);
+
+    StreamUtil::tostream<8, float>(b2, b_stream);
+    MatrixUtilStream::blockmatmul<8,8,2,4,float>(a2, b_stream, c_stream, 1);
+    StreamUtil::toarray<8, float>(c_stream, out2);
 
     for (int i = 0; i < 4; i++) {
         if (baseline[i] != out0[i]) {
@@ -265,11 +274,11 @@ int test_streamutils() {
     float data_array[32];
     float data_array2[32];
 
-    stann_streamutils_tostream_32(data, data_stream);
-    stann_streamutils_toarray_32(data_stream, data_array);
+    StreamUtil::tostream<32>(data, data_stream);
+    StreamUtil::toarray<32>(data_stream, data_array);
 
-    stann_streamutils_tostream_32_reps(data, data_stream2);
-    stann_streamutils_toarray_32_reps(data_stream2, data_array2);
+    StreamUtil::tostream<8>(data, data_stream2, 4);
+    StreamUtil::toarray<8>(data_stream2, data_array2, 4);
 
     for (int i = 0; i < 32; i++) {
         if (data[i] != data_array[i]) {
@@ -323,9 +332,20 @@ int test_denselayer_forward() {
         baseline[i] += biases[i];
     }
 
-    stann_denselayer_forward_1_1(input, weights, biases, outputs0);
-    stann_denselayer_forward_8_8(input, weights, biases, outputs1);
-    stann_denselayer_forward_8_4(input, weights, biases, outputs2);
+    hls::stream<float> in_stream("in_stream");
+    hls::stream<float> out_stream("out_stream");
+
+    StreamUtil::tostream<8, float>(input, in_stream);
+    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, NONE, 1);
+    StreamUtil::toarray<8, float>(out_stream, outputs0);
+
+    StreamUtil::tostream<8, float>(input, in_stream);
+    DenseLayerStream::Float::forward<8,8,8,8>(in_stream, weights, biases, out_stream, NONE, 1);
+    StreamUtil::toarray<8, float>(out_stream, outputs1);
+
+    StreamUtil::tostream<8, float>(input, in_stream);
+    DenseLayerStream::Float::forward<8,8,8,4>(in_stream, weights, biases, out_stream, NONE, 1);
+    StreamUtil::toarray<8, float>(out_stream, outputs2);
 
     for (int i = 0; i < 8; i++) {
         if (outputs0[i] != baseline[i]) {
