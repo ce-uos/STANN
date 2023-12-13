@@ -8,6 +8,52 @@
  */
 namespace MatrixUtil {
 
+namespace New {
+
+    template<int M, int N, int REUSE, typename T = float>
+    void matvec(T *mat, T *vec, T *res) {
+        // REUSE <= N
+        // mat: MxN
+        // vec: Nx1
+        // out: Mx1
+
+        T acc[M];
+        #pragma HLS ARRAY_PARTITION variable=acc complete
+
+        for (int i = 0; i < M; i++) {
+        #pragma HLS UNROLL
+            acc[i] = 0;
+        }
+        for (int r = 0; r < REUSE; r++) {
+        #pragma HLS PIPELINE II=1 rewind
+            int in_index = r;
+            int out_index = 0;
+            int acc_step = 0;
+            for (int b = 0; b < ((M*N+1)/REUSE); b++) {
+            #pragma HLS UNROLL
+                acc[out_index] += vec[in_index] * mat[b * REUSE + r];
+
+                in_index += REUSE;
+                if (in_index > N) {
+                    in_index = r;
+                }
+
+                acc_step++;
+                if (acc_step > N / REUSE) {
+                    acc_step = 0;
+                    out_index++;
+                }
+            }
+
+        }
+
+        for (int i = 0; i < M; i++) {
+            res[i] = acc[i];
+        }
+    }
+
+}
+
 /**
  * Namespace for basic implementations of matrix operations.
  */
@@ -646,6 +692,18 @@ void blockmatmul(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<M>(b, b_buffer, 1);
         MatrixUtil::SysArr::blockmatmul<K,M,1,BK,BM,1,T,PII>(a, b_buffer, c_buffer);
+        StreamUtil::tostream<K>(c_buffer, c, 1);
+    }
+}
+
+template<int K, int M, int BK, int BM, typename T, int PII = 1>
+void blockmatmul_new(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
+    T b_buffer[M];
+    T c_buffer[K];
+
+    for (int r = 0; r < reps; r++) {
+        StreamUtil::toarray<M>(b, b_buffer, 1);
+        MatrixUtil::New::matvec<K, M, BK, T>(a, b_buffer, c_buffer)
         StreamUtil::tostream<K>(c_buffer, c, 1);
     }
 }

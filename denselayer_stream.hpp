@@ -151,7 +151,7 @@ void forward(hls::stream<float> &input, float *weights, float *biases, hls::stre
     hls::stream<float> output_nobias;
     hls::stream<float> output_noact;
 
-    MatrixStream::blockmatmul<OUTPUT_DIM, INPUT_DIM, PE1, PE2, float, PII>(weights, input, output_nobias, reps);
+    MatrixStream::blockmatmul_new<OUTPUT_DIM, INPUT_DIM, PE1, PE2, float, PII>(weights, input, output_nobias, reps);
 
     add_bias<OUTPUT_DIM, float>(output_nobias, biases, output_noact, reps);
 
