@@ -50,7 +50,7 @@ float lin_tanh_simple_derivative(float input) {
  * @return  leaky ReLU of input
  */
 float leaky_relu_simple(float input) {
-    return input <= 0.0f ? input * 0.0625 : input;
+    return input < 0.0f ? input * 0.0625 : input;
 }
 
 /**
@@ -61,7 +61,7 @@ float leaky_relu_simple(float input) {
  * @return  ReLU activation of input
  */
 float relu_simple(float input) {
-    return input <= 0.0f ? 0 : input;
+    return input < 0.0f ? 0 : input;
 }
 
 /**
@@ -72,7 +72,7 @@ float relu_simple(float input) {
  * @return  leaky ReLU of input
  */
 float leaky_relu_simple_derivative(float input) {
-    return input <= 0 ? 0.0625 : 1;
+    return input < 0.0f ? 0.0625 : 1.0;
 }
 
 float error_act(float input){
@@ -398,6 +398,20 @@ void leaky_relu_stream(hls::stream<float> &input, float *input_copy, hls::stream
             float tmp = input.read();
             input_copy[j * BATCH_SIZE + i] = tmp;
             tmp = Activation::leaky_relu_simple(tmp);
+            output.write(tmp);
+            output_copy.write(tmp);
+        }
+    }
+}
+
+template<int OUTDIM, int BATCH_SIZE>
+void no_activation_stream(hls::stream<float> &input, float *input_copy, hls::stream<float> &output, hls::stream<float> &output_copy, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy[j * BATCH_SIZE + i] = tmp;
             output.write(tmp);
             output_copy.write(tmp);
         }

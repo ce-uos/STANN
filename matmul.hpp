@@ -644,9 +644,9 @@ void blockmatmul(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
     T c_buffer[K];
 
     for (int r = 0; r < reps; r++) {
-        StreamUtil::toarray<M>(b, b_buffer, 1);
+        StreamUtil::toarray<M>(b, b_buffer);
         MatrixUtil::SysArr::blockmatmul<K,M,1,BK,BM,1,T,PII>(a, b_buffer, c_buffer);
-        StreamUtil::tostream<K>(c_buffer, c, 1);
+        StreamUtil::tostream<K>(c_buffer, c);
     }
 }
 

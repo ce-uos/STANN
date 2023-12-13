@@ -1,7 +1,10 @@
 #ifndef __STANN_HLS_DENSE_STREAM_HPP__
 #define __STANN_HLS_DENSE_STREAM_HPP__
 
+#include "activations.hpp"
+#include "matmul.hpp"
 #include "stann.hpp"
+#include "streamutils.hpp"
 
 namespace MatrixStream = MatrixUtilStream;
 namespace Matrix = MatrixUtil::SysArr;
@@ -110,12 +113,26 @@ void apply_activation_derivative_float(float *delta_in, float *this_output, hls:
     for (int i = 0; i < DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
         #pragma HLS pipeline II=10
-            //float tmp = delta_in[j * DIM + i];
-            float tmp = delta_in[i * BATCH_SIZE + j];
+            float tmp = delta_in[j * DIM + i];
+            //float tmp = delta_in[i * BATCH_SIZE + j];
             if (act == LEAKY_RELU) {
                 tmp *= Activation::leaky_relu_simple_derivative(this_output[i * BATCH_SIZE + j]);
+                //tmp *= this_output[i * BATCH_SIZE + j];
             }
             delta_out.write(tmp);
+        }
+    }
+}
+
+template<int DIM, int BATCH_SIZE>
+void apply_activation_derivative_float_inplace(float *delta_in, float *this_output, activation_t act) {
+    for (int i = 0; i < DIM; i++) {
+        for (int j = 0; j < BATCH_SIZE; j++) {
+        #pragma HLS pipeline II=10
+            if (act == LEAKY_RELU) {
+                delta_in[j * DIM + i] *= Activation::leaky_relu_simple_derivative(this_output[i * BATCH_SIZE + j]);
+                //delta_in[j * DIM + i] *= Activation::leaky_relu_simple_derivative(this_output[j * DIM + i]);
+            }
         }
     }
 }
@@ -186,12 +203,15 @@ void backward(float *this_output, float *next_weights, hls::stream<float> &delta
     float delta_noact[BATCH_SIZE * OUTPUT_DIM];
 
     float delta_buffer[BATCH_SIZE * NEXT_LAYER_DIM];
-    StreamUtil::toarray<BATCH_SIZE * NEXT_LAYER_DIM>(delta_next, delta_buffer); 
+    //StreamUtil::toarray<NEXT_LAYER_DIM*BATCH_SIZE>(delta_next, delta_buffer); 
+    StreamUtil::toarray<NEXT_LAYER_DIM>(delta_next, delta_buffer, BATCH_SIZE); 
 
     Matrix::blockmatmul<BATCH_SIZE, NEXT_LAYER_DIM, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(delta_buffer, next_weights, delta_noact);
-    //Matrix::blockmatmul<OUTPUT_DIM, NEXT_LAYER_DIM, BATCH_SIZE, PE1, PE2, PE3, float, PII>(next_weights, delta_buffer, delta_noact);
 
-    apply_activation_derivative_float<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, delta, derivative);
+    //apply_activation_derivative_float<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, delta, derivative);
+    apply_activation_derivative_float_inplace<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, derivative);
+    //StreamUtil::tostream<OUTPUT_DIM * BATCH_SIZE>(delta_noact, delta);
+    StreamUtil::tostream<OUTPUT_DIM>(delta_noact, delta, BATCH_SIZE);
 }
 
 /** 
@@ -212,7 +232,7 @@ void backward(float *this_output, float *next_weights, hls::stream<float> &delta
  * @param[in]       this_input      inputs to this layer
  * @param[in]       learning_rate   learning rate for training
  */
-template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=80>
+template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=100>
 void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, T learning_rate) {
 
     T gradients[INPUT_DIM * OUTPUT_DIM];
@@ -224,15 +244,37 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
     StreamUtil::toarray<INPUT_DIM>(this_input, input_buffer, BATCH_SIZE);
 
     T delta_buffer[OUTPUT_DIM * BATCH_SIZE];
-    StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(deltas, delta_buffer);
+    StreamUtil::toarray<OUTPUT_DIM>(deltas, delta_buffer, BATCH_SIZE);
+    //StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(deltas, delta_buffer);
 
 
     Matrix::blockmatmul<INPUT_DIM, BATCH_SIZE, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(input_buffer, delta_buffer, gradients);
 
+    //printf("grads:\n");
+    //for (int n = 0; n < OUTPUT_DIM; n++) {
+    //    for (int m = 0; m < INPUT_DIM; m++) {
+    //        printf("%f ", gradients[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("deltas:\n");
+    //for (int m = 0; m < BATCH_SIZE; m++) {
+    //    for (int n = 0; n < OUTPUT_DIM; n++) {
+    //        printf("%f ", delta_buffer[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("inputs: %f %f %f\n", input_buffer[0], input_buffer[1], input_buffer[2]);
+    //printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
+    //printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
+
     for (int i = 0; i < INPUT_DIM; i++) {
         for (int j = 0; j < OUTPUT_DIM; j++) {
         #pragma HLS PIPELINE II=3
-            weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
+            weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
         }
     }
 
@@ -240,10 +282,13 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
     #pragma HLS pipeline II=20
         for (int b = 0; b < BATCH_SIZE; b++) {
         #pragma HLS unroll
-            buffer[b] = learning_rate * delta_buffer[y * BATCH_SIZE + b];
+            // TODO transpose?
+            // delta buffer is BxO, so OUTPUT_DIM columns
+            buffer[b] = learning_rate * delta_buffer[b * OUTPUT_DIM + y];
+            //buffer[b] = learning_rate * delta_buffer[y * BATCH_SIZE + b];
         }
         for (int b = 0; b < BATCH_SIZE; b++) {
-            biases[y] -= buffer[b];
+            biases[y] -= buffer[b] / BATCH_SIZE;
         }
     }
 } 

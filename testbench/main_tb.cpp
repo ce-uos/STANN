@@ -312,6 +312,7 @@ int test_denselayer_forward() {
     };
 
     float biases[8] = {
+        //0,0,0,0,0,0,0,0
         1,2,3,4,5,6,7,8
     };
 
@@ -347,6 +348,9 @@ int test_denselayer_forward() {
     DenseLayerStream::Float::forward<8,8,8,4>(in_stream, weights, biases, out_stream, NONE, 1);
     StreamUtil::toarray<8, float>(out_stream, outputs2);
 
+    print_mat<8,1>(outputs0);
+    print_mat<8,1>(baseline);
+
     for (int i = 0; i < 8; i++) {
         if (outputs0[i] != baseline[i]) {
             return TEST_FAILED;
@@ -359,6 +363,92 @@ int test_denselayer_forward() {
         }
     }
 
+    return TEST_PASSED;
+}
+
+int test_denselayer_forward_batch() {
+    float input[8 * 32];
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 32; j++) {
+            input[i * 32 + j] = i + 1;
+        }
+    }
+
+    float weights[64] = {
+        1,1,1,1,1,1,1,1,
+        2,2,2,2,2,2,2,2,
+        3,3,3,3,3,3,3,3,
+        4,4,4,4,4,4,4,4,
+        5,5,5,5,5,5,5,5,
+        6,6,6,6,6,6,6,6,
+        7,7,7,7,7,7,7,7,
+        8,8,8,8,8,8,8,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+        //1,2,3,4,5,6,7,8,
+    };
+
+    for (int i = 0; i < 64; i++) {
+        weights[i] *= -1;
+    }
+
+    float biases[8 * 32] = {
+        //0,0,0,0,0,0,0,0
+        1,2,3,4,5,6,7,8
+    };
+
+    float outputs0[8*32];
+    float outputs1[8*32];
+    float outputs2[8*32];
+    float baseline[8*32];
+    float baseline_leakyrelu[8*32];
+
+    for (int i = 0; i < 8*32; i++) {
+        outputs0[i] = 0;
+        outputs1[i] = 0;
+        outputs2[i] = 0;
+        baseline[i] = 0;
+        baseline_leakyrelu[i] = 0;
+    }
+
+    simple_matmul<8,8,32>(weights, input, baseline);
+    for (int j = 0; j < 32; j++) {
+        for (int i = 0; i < 8; i++) {
+            baseline[i * 32 + j] += biases[i];
+            if (baseline[i * 32 + j] < 0) {
+                baseline_leakyrelu[i * 32 + j] = 0.0625 * baseline[i * 32 + j];
+            } else {
+                baseline_leakyrelu[i * 32 + j] = baseline[i * 32 + j];
+            }
+        }
+    }
+
+    hls::stream<float> in_stream("in_stream");
+    hls::stream<float> out_stream("out_stream");
+
+    StreamUtil::tostream<8, float>(input, in_stream, 32);
+    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, NONE, 32);
+    StreamUtil::toarray<8, float>(out_stream, outputs0, 32);
+
+    StreamUtil::tostream<8, float>(input, in_stream, 32);
+    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, LEAKY_RELU, 32);
+    StreamUtil::toarray<8, float>(out_stream, outputs1, 32);
+
+    for (int i = 0; i < 8 * 32; i++) {
+        if (outputs0[i] != baseline[i]) {
+            return TEST_FAILED;
+        }
+    }
+    for (int i = 0; i < 8 * 32; i++) {
+        if (outputs1[i] != baseline_leakyrelu[i]) {
+            return TEST_FAILED;
+        }
+    }
     return TEST_PASSED;
 }
 
@@ -392,6 +482,12 @@ int main(int argc, const char *argv[])
         printf("DenseLayerStream Forward test PASSED\n");
     } else {
         printf("DenseLayerStream Forward test FAILED\n");
+    }
+
+    if (test_denselayer_forward_batch() == TEST_PASSED) {
+        printf("DenseLayerStream Forward Batch test PASSED\n");
+    } else {
+        printf("DenseLayerStream Forward Batch test FAILED\n");
     }
 
     return 0;

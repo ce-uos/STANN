@@ -91,13 +91,40 @@ void MeanSquaredError_derivative_stream(hls::stream<T> &output, hls::stream<T> &
     StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(output, output_buffer);
     StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(target, target_buffer);
 
+loss_loop:
     for (int i = 0; i < OUTPUT_DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
-            derr_buffer[j * OUTPUT_DIM + i] = -(target_buffer[i * BATCH_SIZE + j] - output_buffer[j * OUTPUT_DIM + i]) / 4 / BATCH_SIZE;
+            // derr = BxO
+            // target = OxB
+            // output = BxO (NOT OxB, output of FW is transposed because of the streams!)
+            derr_buffer[j * OUTPUT_DIM + i] = (-(target_buffer[j * OUTPUT_DIM + i] - output_buffer[j * OUTPUT_DIM + i]) / (OUTPUT_DIM / 2));
         }
     }
 
-    StreamUtil::tostream<OUTPUT_DIM * BATCH_SIZE>(derr_buffer, derr);
+    StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr, BATCH_SIZE);
+}
+
+template<int OUTPUT_DIM, int BATCH_SIZE = 1, typename T = DEFAULT_DATATYPE>
+void MeanSquaredErrorDQN_derivative_stream(hls::stream<T> &output, hls::stream<T> &target, hls::stream<T> &derr) {
+
+    T output_buffer[OUTPUT_DIM * BATCH_SIZE];
+    T target_buffer[OUTPUT_DIM * BATCH_SIZE];
+    T derr_buffer[OUTPUT_DIM * BATCH_SIZE];
+
+    StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(output, output_buffer);
+    StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(target, target_buffer);
+
+loss_loop:
+    for (int i = 0; i < OUTPUT_DIM; i++) {
+        for (int j = 0; j < BATCH_SIZE; j++) {
+            // derr = BxO
+            // target = OxB
+            // output = BxO (NOT OxB, output of FW is transposed because of the streams!)
+            derr_buffer[j * OUTPUT_DIM + i] = (-(target_buffer[j * OUTPUT_DIM + i] - output_buffer[j * OUTPUT_DIM + i]) * 2);
+        }
+    }
+
+    StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr, BATCH_SIZE);
 }
 
 /**
