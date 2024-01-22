@@ -322,6 +322,7 @@ void blockmatmul(T *a, T *b, T*c) {
         #pragma HLS unroll
             for (int bn = 0; bn < BN; bn++) {
             #pragma HLS unroll
+            //#pragma HLS pipeline II=5
                 bufferC[bn * BK + bk] += bufferC_systolic[(bk+(BN-1-bn)) * BN + bn];
             }
         }
@@ -333,7 +334,7 @@ void blockmatmul(T *a, T *b, T*c) {
             #pragma HLS unroll
                 for (int bn = 0; bn < BN; bn++) {
                 #pragma HLS unroll
-                    //#pragma HLS pipeline II=5
+                    //#pragma HLS pipeline II=10
                     c[(k+bk) * N + (n+bn)] = bufferC[bn * BK + bk];
                 }
             }

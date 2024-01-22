@@ -41,6 +41,16 @@ void add_bias(hls::stream<T> &input, T *biases, hls::stream<T> &output, int reps
     }
 }
 
+inline float clip(float val) {
+    if (val > 1.0) {
+        return 1.0;
+    }
+    if (val < -1.0) {
+        return -1.0;
+    }
+    return val;
+}
+
 
 /**
  * This function applies the activation function to the output of the layer.
@@ -197,7 +207,7 @@ void forward(hls::stream<float> &input, float *weights, float *biases, hls::stre
  * @param[in]   derivative      constant to select activation
  * @param[in]   reps            number of repetitions
  */
-template<int INPUT_DIM, int OUTPUT_DIM, int NEXT_LAYER_DIM, int BATCH_SIZE, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 80>
+template<int INPUT_DIM, int OUTPUT_DIM, int NEXT_LAYER_DIM, int BATCH_SIZE, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 20>
 void backward(float *this_output, float *next_weights, hls::stream<float> &delta_next, hls::stream<float> &delta, activation_t derivative, int reps) {
 
     float delta_noact[BATCH_SIZE * OUTPUT_DIM];
@@ -232,7 +242,7 @@ void backward(float *this_output, float *next_weights, hls::stream<float> &delta
  * @param[in]       this_input      inputs to this layer
  * @param[in]       learning_rate   learning rate for training
  */
-template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=100>
+template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=20>
 void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, T learning_rate) {
 
     T gradients[INPUT_DIM * OUTPUT_DIM];
@@ -275,6 +285,68 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
         #pragma HLS PIPELINE II=3
             //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
             weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
+        }
+    }
+
+    for (int y = 0; y < OUTPUT_DIM; y++) {
+    #pragma HLS pipeline II=20
+        for (int b = 0; b < BATCH_SIZE; b++) {
+        #pragma HLS unroll
+            // TODO transpose?
+            // delta buffer is BxO, so OUTPUT_DIM columns
+            buffer[b] = learning_rate * delta_buffer[b * OUTPUT_DIM + y];
+            //buffer[b] = learning_rate * delta_buffer[y * BATCH_SIZE + b];
+        }
+        for (int b = 0; b < BATCH_SIZE; b++) {
+            biases[y] -= buffer[b] / BATCH_SIZE;
+        }
+    }
+} 
+
+template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=100>
+void update_clipped(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, T learning_rate) {
+
+    T gradients[INPUT_DIM * OUTPUT_DIM];
+
+    T buffer[BATCH_SIZE];
+    #pragma HLS ARRAY_PARTITION variable=buffer type=complete
+
+    T input_buffer[INPUT_DIM * BATCH_SIZE];
+    StreamUtil::toarray<INPUT_DIM>(this_input, input_buffer, BATCH_SIZE);
+
+    T delta_buffer[OUTPUT_DIM * BATCH_SIZE];
+    StreamUtil::toarray<OUTPUT_DIM>(deltas, delta_buffer, BATCH_SIZE);
+    //StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(deltas, delta_buffer);
+
+
+    Matrix::blockmatmul<INPUT_DIM, BATCH_SIZE, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(input_buffer, delta_buffer, gradients);
+
+    //printf("grads:\n");
+    //for (int n = 0; n < OUTPUT_DIM; n++) {
+    //    for (int m = 0; m < INPUT_DIM; m++) {
+    //        printf("%f ", gradients[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("deltas:\n");
+    //for (int m = 0; m < BATCH_SIZE; m++) {
+    //    for (int n = 0; n < OUTPUT_DIM; n++) {
+    //        printf("%f ", delta_buffer[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("inputs: %f %f %f\n", input_buffer[0], input_buffer[1], input_buffer[2]);
+    //printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
+    //printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
+
+    for (int i = 0; i < INPUT_DIM; i++) {
+        for (int j = 0; j < OUTPUT_DIM; j++) {
+        #pragma HLS PIPELINE II=3
+            float grad = clip(gradients[i * OUTPUT_DIM + j]);
+            weights[j * INPUT_DIM + i] -= learning_rate * grad / BATCH_SIZE;
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
         }
     }
 
