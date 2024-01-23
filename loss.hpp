@@ -124,6 +124,10 @@ loss_loop:
         }
     }
 
+    // this works with new backward function
+    //StreamUtil::tostream<OUTPUT_DIM*BATCH_SIZE>(derr_buffer, derr);
+
+    // this works with old backward function
     StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr, BATCH_SIZE);
 }
 

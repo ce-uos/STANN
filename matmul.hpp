@@ -651,6 +651,18 @@ void blockmatmul(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
     }
 }
 
+template<int M, int N, int BM, int BN, typename T, int PII = 1>
+void blockmatmul(hls::stream<T> &a, T *b, hls::stream<T> &c, int reps) {
+    T a_buffer[M];
+    T c_buffer[N];
+
+    for (int r = 0; r < reps; r++) {
+        StreamUtil::toarray<M>(a, a_buffer);
+        MatrixUtil::SysArr::blockmatmul<1,M,N,1,BM,BN,T,PII>(a_buffer, b, c_buffer);
+        StreamUtil::tostream<N>(c_buffer, c);
+    }
+}
+
 /**
  * Quantized block matrix multiplication with stream as second input and output
  * "A" should have dimensions KxM.
@@ -708,17 +720,17 @@ void blockmatmul_quantized(ap_uint<8> *a, hls::stream<ap_uint<8>> &b, hls::strea
  * @param[out]    c     output matrix (KxN)
  * @param[out]    reps  number of repetitions (similar to batch size)
  */
-template<int K, int M, int BK, int BM, typename T, int PII = 1>
-void blockmatmul(hls::stream<T> &a, T *b, hls::stream<T> &c, int reps) {
-    T a_buffer[K*M];
-    T c_buffer[K];
-
-    for (int r = 0; r < reps; r++) {
-        StreamUtil::toarray<K*M>(a, a_buffer, 1);
-        MatrixUtil::SysArr::blockmatmul<K,M,1,BK,BM,1,T,PII>(a_buffer, b, c_buffer);
-        StreamUtil::tostream<K>(c_buffer, c, 1);
-    }
-}
+// template<int K, int M, int BK, int BM, typename T, int PII = 1>
+// void blockmatmul(hls::stream<T> &a, T *b, hls::stream<T> &c, int reps) {
+//     T a_buffer[K*M];
+//     T c_buffer[K];
+//
+//     for (int r = 0; r < reps; r++) {
+//         StreamUtil::toarray<K*M>(a, a_buffer, 1);
+//         MatrixUtil::SysArr::blockmatmul<K,M,1,BK,BM,1,T,PII>(a_buffer, b, c_buffer);
+//         StreamUtil::tostream<K>(c_buffer, c, 1);
+//     }
+// }
 
 } // namespace MatrixUtilStream
 
