@@ -135,20 +135,6 @@ void apply_activation_derivative_float(float *delta_in, float *this_output, hls:
 }
 
 template<int DIM, int BATCH_SIZE>
-void apply_activation_derivative_float_stream(hls::stream<float> &delta_in, float *this_output, hls::stream<float> &delta_out, activation_t act) {
-    for (int j = 0; j < BATCH_SIZE; j++) {
-        for (int i = 0; i < DIM; i++) {
-        #pragma HLS pipeline II=10
-            float tmp = delta_in.read();//delta_in[j * DIM + i];
-            if (act == LEAKY_RELU) {
-                tmp *= Activation::leaky_relu_simple_derivative(this_output[i * BATCH_SIZE + j]);
-            }
-            delta_out.write(tmp);
-        }
-    }
-}
-
-template<int DIM, int BATCH_SIZE>
 void apply_activation_derivative_float_inplace(float *delta_in, float *this_output, activation_t act) {
     for (int i = 0; i < DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
@@ -222,16 +208,6 @@ void forward(hls::stream<float> &input, float *weights, float *biases, hls::stre
  * @param[in]   reps            number of repetitions
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int NEXT_LAYER_DIM, int BATCH_SIZE, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 20>
-void backward_new(float *this_output, float *next_weights, hls::stream<float> &delta_next, hls::stream<float> &delta, activation_t derivative, int reps) {
-
-    hls::stream<float> delta_noact;
-
-    MatrixStream::blockmatmul<NEXT_LAYER_DIM, OUTPUT_DIM, PE2, PE3, float, PII>(delta_next, next_weights, delta_noact, reps);
-
-    apply_activation_derivative_float_stream<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, delta, derivative);
-}
-
-template<int INPUT_DIM, int OUTPUT_DIM, int NEXT_LAYER_DIM, int BATCH_SIZE, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 20>
 void backward(float *this_output, float *next_weights, hls::stream<float> &delta_next, hls::stream<float> &delta, activation_t derivative, int reps) {
 
     float delta_noact[BATCH_SIZE * OUTPUT_DIM];
@@ -283,6 +259,26 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
 
 
     Matrix::blockmatmul<INPUT_DIM, BATCH_SIZE, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(input_buffer, delta_buffer, gradients);
+
+    //printf("grads:\n");
+    //for (int n = 0; n < OUTPUT_DIM; n++) {
+    //    for (int m = 0; m < INPUT_DIM; m++) {
+    //        printf("%f ", gradients[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("deltas:\n");
+    //for (int m = 0; m < BATCH_SIZE; m++) {
+    //    for (int n = 0; n < OUTPUT_DIM; n++) {
+    //        printf("%f ", delta_buffer[m * OUTPUT_DIM + n]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //printf("inputs: %f %f %f\n", input_buffer[0], input_buffer[1], input_buffer[2]);
+    //printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
+    //printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
 
     for (int i = 0; i < INPUT_DIM; i++) {
         for (int j = 0; j < OUTPUT_DIM; j++) {
