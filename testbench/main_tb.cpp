@@ -61,9 +61,9 @@ int test_matmul_square() {
 
     simple_matmul<4,4,4>(a, b, baseline);
 
-    MatrixUtil::SysArr::blockmatmul<4,4,4,1,1,1,float>(a,b,out0);
-    MatrixUtil::SysArr::blockmatmul<4,4,4,4,4,4,float>(a,b,out1);
-    MatrixUtil::SysArr::blockmatmul<4,4,4,4,2,1,float>(a,b,out2);
+    MatrixUtil::New::blockmatmul<4,4,4,1,1,1,float>(a,b,out0);
+    MatrixUtil::New::blockmatmul<4,4,4,4,4,4,float>(a,b,out1);
+    MatrixUtil::New::blockmatmul<4,4,4,4,2,1,float>(a,b,out2);
 
     for (int i = 0; i < 16; i++) {
         if (baseline[i] != out0[i]) {
@@ -139,10 +139,10 @@ int test_matmul_nonsquare() {
     simple_matmul<8,8,8>(a, b, baseline);
     simple_matmul<8,8,1>(a, b2, baseline2);
 
-    MatrixUtil::SysArr::blockmatmul<8,8,8,4,2,4,float>(a,b,out0);
-    MatrixUtil::SysArr::blockmatmul<8,8,8,1,8,1,float>(a,b,out1);
-    MatrixUtil::SysArr::blockmatmul<8,8,8,8,4,2,float>(a,b,out2);
-    MatrixUtil::SysArr::blockmatmul<8,8,1,2,4,1,float>(a,b2,out3);
+    MatrixUtil::New::blockmatmul<8,8,8,4,2,4,float>(a,b,out0);
+    MatrixUtil::New::blockmatmul<8,8,8,1,8,1,float>(a,b,out1);
+    MatrixUtil::New::blockmatmul<8,8,8,8,4,2,float>(a,b,out2);
+    MatrixUtil::New::blockmatmul<8,8,1,2,4,1,float>(a,b2,out3);
 
     for (int i = 0; i < 64; i++) {
         if (baseline[i] != out0[i]) {
@@ -337,15 +337,15 @@ int test_denselayer_forward() {
     hls::stream<float> out_stream("out_stream");
 
     StreamUtil::tostream<8, float>(input, in_stream);
-    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, NONE, 1);
+    DenseLayerStream::Float::forward<8,8,1,1,1,1>(in_stream, weights, biases, out_stream, NONE, 1);
     StreamUtil::toarray<8, float>(out_stream, outputs0);
 
     StreamUtil::tostream<8, float>(input, in_stream);
-    DenseLayerStream::Float::forward<8,8,8,8>(in_stream, weights, biases, out_stream, NONE, 1);
+    DenseLayerStream::Float::forward<8,8,1,8,8,1>(in_stream, weights, biases, out_stream, NONE, 1);
     StreamUtil::toarray<8, float>(out_stream, outputs1);
 
     StreamUtil::tostream<8, float>(input, in_stream);
-    DenseLayerStream::Float::forward<8,8,8,4>(in_stream, weights, biases, out_stream, NONE, 1);
+    DenseLayerStream::Float::forward<8,8,1,8,4,1>(in_stream, weights, biases, out_stream, NONE, 1);
     StreamUtil::toarray<8, float>(out_stream, outputs2);
 
     print_mat<8,1>(outputs0);
@@ -366,11 +366,13 @@ int test_denselayer_forward() {
     return TEST_PASSED;
 }
 
+#define TEST_BS 4
+
 int test_denselayer_forward_batch() {
-    float input[8 * 32];
+    float input[8 * TEST_BS];
     for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 32; j++) {
-            input[i * 32 + j] = i + 1;
+        for (int j = 0; j < TEST_BS; j++) {
+            input[i * TEST_BS + j] = i + 1;
         }
     }
 
@@ -397,33 +399,31 @@ int test_denselayer_forward_batch() {
         weights[i] *= -1;
     }
 
-    float biases[8 * 32] = {
-        //0,0,0,0,0,0,0,0
-        1,2,3,4,5,6,7,8
-    };
+    float biases[8 * TEST_BS];
 
-    float outputs0[8*32];
-    float outputs1[8*32];
-    float outputs2[8*32];
-    float baseline[8*32];
-    float baseline_leakyrelu[8*32];
+    float outputs0[8*TEST_BS];
+    float outputs1[8*TEST_BS];
+    float outputs2[8*TEST_BS];
+    float baseline[8*TEST_BS];
+    float baseline_leakyrelu[8*TEST_BS];
 
-    for (int i = 0; i < 8*32; i++) {
+    for (int i = 0; i < 8*TEST_BS; i++) {
         outputs0[i] = 0;
         outputs1[i] = 0;
         outputs2[i] = 0;
         baseline[i] = 0;
         baseline_leakyrelu[i] = 0;
+        biases[i] = 0;
     }
 
-    simple_matmul<8,8,32>(weights, input, baseline);
-    for (int j = 0; j < 32; j++) {
+    simple_matmul<8,8,TEST_BS>(weights, input, baseline);
+    for (int j = 0; j < TEST_BS; j++) {
         for (int i = 0; i < 8; i++) {
-            baseline[i * 32 + j] += biases[i];
-            if (baseline[i * 32 + j] < 0) {
-                baseline_leakyrelu[i * 32 + j] = 0.0625 * baseline[i * 32 + j];
+            baseline[i * TEST_BS + j] += biases[i];
+            if (baseline[i * TEST_BS + j] < 0) {
+                baseline_leakyrelu[i * TEST_BS + j] = 0.0625 * baseline[i * TEST_BS + j];
             } else {
-                baseline_leakyrelu[i * 32 + j] = baseline[i * 32 + j];
+                baseline_leakyrelu[i * TEST_BS + j] = baseline[i * TEST_BS + j];
             }
         }
     }
@@ -431,21 +431,27 @@ int test_denselayer_forward_batch() {
     hls::stream<float> in_stream("in_stream");
     hls::stream<float> out_stream("out_stream");
 
-    StreamUtil::tostream<8, float>(input, in_stream, 32);
-    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, NONE, 32);
-    StreamUtil::toarray<8, float>(out_stream, outputs0, 32);
+    StreamUtil::tostream<8, float>(input, in_stream, TEST_BS);
+    DenseLayerStream::Float::forward<8,8,TEST_BS,1,1,1>(in_stream, weights, biases, out_stream, NONE, TEST_BS);
+    StreamUtil::toarray<8, float>(out_stream, outputs0, TEST_BS);
 
-    StreamUtil::tostream<8, float>(input, in_stream, 32);
-    DenseLayerStream::Float::forward<8,8,1,1>(in_stream, weights, biases, out_stream, LEAKY_RELU, 32);
-    StreamUtil::toarray<8, float>(out_stream, outputs1, 32);
+    StreamUtil::tostream<8, float>(input, in_stream, TEST_BS);
+    DenseLayerStream::Float::forward<8,8,TEST_BS,1,1,1>(in_stream, weights, biases, out_stream, LEAKY_RELU, TEST_BS);
+    StreamUtil::toarray<8, float>(out_stream, outputs1, TEST_BS);
 
-    for (int i = 0; i < 8 * 32; i++) {
+    for (int i = 0; i < 8 * TEST_BS; i++) {
         if (outputs0[i] != baseline[i]) {
+            printf("Error without leaky ReLU\n");
+            print_mat<8,TEST_BS>(outputs0);
+            print_mat<8,TEST_BS>(baseline);
             return TEST_FAILED;
         }
     }
-    for (int i = 0; i < 8 * 32; i++) {
+    for (int i = 0; i < 8 * TEST_BS; i++) {
         if (outputs1[i] != baseline_leakyrelu[i]) {
+            printf("Error with leaky ReLU\n");
+            print_mat<8,1>(outputs1);
+            print_mat<8,1>(baseline_leakyrelu);
             return TEST_FAILED;
         }
     }

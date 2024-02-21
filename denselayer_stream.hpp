@@ -7,7 +7,7 @@
 #include "streamutils.hpp"
 
 namespace MatrixStream = MatrixUtilStream;
-namespace Matrix = MatrixUtil::SysArr;
+namespace Matrix = MatrixUtil::New;
 
 /**
  * Namespace for stream-based version of dense layers.
@@ -171,14 +171,15 @@ namespace Float {
  * @param[in]   act         constant to choose activation
  * @param[in]   reps        number of repetitions
  */
-template<int INPUT_DIM, int OUTPUT_DIM, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 80>
+template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, int PE1 = 1, int PE2 = 1, int PE3 = 1, int PII = 80>
 void forward(hls::stream<float> &input, float *weights, float *biases, hls::stream<float> &output, activation_t act, int reps) {
 #pragma HLS Dataflow
 
     hls::stream<float> output_nobias;
     hls::stream<float> output_noact;
 
-    MatrixStream::blockmatmul<OUTPUT_DIM, INPUT_DIM, PE1, PE2, float, PII>(weights, input, output_nobias, reps);
+    MatrixStream::blockmatmul_big<OUTPUT_DIM, INPUT_DIM, BATCH_SIZE, PE1, PE2, PE3, float, PII>(weights, input, output_nobias, reps);
+    //MatrixStream::blockmatmul<OUTPUT_DIM, INPUT_DIM, PE1, PE2, float, PII>(weights, input, output_nobias, reps);
 
     add_bias<OUTPUT_DIM, float>(output_nobias, biases, output_noact, reps);
 

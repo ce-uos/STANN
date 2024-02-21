@@ -3,7 +3,7 @@
 
 #include "stann.hpp"
 
-namespace Matrix = MatrixUtil::SysArr;
+namespace Matrix = MatrixUtil::New;
 
 /**
  * This namespace contains all functions for dense neural network layers (fully connected layers).

@@ -106,17 +106,17 @@ void training_stream(float *input, float *labels,
   StreamUtil::duplicate<6 * BATCH_SIZE>(input_stream, input_stream1,
                                         input_stream2);
 
-  DenseLayerStream::Float::forward<6, 128, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<6, 128, BATCH_SIZE, 1, 1, 1, 100>(
       input_stream1, fw_params.weights_l1, fw_params.biases_l1, l1_out, NONE,
       reps);
   ActivationLayer::Float::leaky_relu_stream<128, BATCH_SIZE>(l1_out, l1_out_copy, l1_out_relu, l1_out_relu_copy, reps);
   //ActivationLayer::Float::no_activation_stream<128, BATCH_SIZE>(l1_out, l1_out_copy, l1_out_relu, l1_out_relu_copy, reps);
-  DenseLayerStream::Float::forward<128, 128, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<128, 128, BATCH_SIZE, 1, 1, 1, 100>(
       l1_out_relu, fw_params.weights_l2, fw_params.biases_l2, l2_out, NONE,
       reps);
   ActivationLayer::Float::leaky_relu_stream<128, BATCH_SIZE>(l2_out, l2_out_copy, l2_out_relu, l2_out_relu_copy, reps);
   //ActivationLayer::Float::no_activation_stream<128, BATCH_SIZE>(l2_out, l2_out_copy, l2_out_relu, l2_out_relu_copy, reps);
-  DenseLayerStream::Float::forward<128, 8, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<128, 8, BATCH_SIZE, 1, 1, 1, 100>(
       l2_out_relu, fw_params.weights_l3, fw_params.biases_l3, l3_out, NONE,
       reps);
 
@@ -179,6 +179,7 @@ void training_stream(float *input, float *labels,
       learning_rate);
 }
 
+template<int BATCH_SIZE>
 void forward_stream(float *input, SingleNetParams &params,
                     float *output, int reps) {
 #pragma HLS Dataflow
@@ -196,17 +197,18 @@ void forward_stream(float *input, SingleNetParams &params,
 
   StreamUtil::tostream<6>(input, input_stream, reps);
 
-  DenseLayerStream::Float::forward<6, 128, 1, 1, 1>(
+  DenseLayerStream::Float::forward<6, 128, BATCH_SIZE, 1, 1, 1>(
       input_stream, params.weights_l1, params.biases_l1, l1_out, LEAKY_RELU,
       reps);
-  DenseLayerStream::Float::forward<128, 128, 1, 1, 1>(
+  DenseLayerStream::Float::forward<128, 128, BATCH_SIZE, 1, 1, 1>(
       l1_out, params.weights_l2, params.biases_l2, l2_out, LEAKY_RELU, reps);
-  DenseLayerStream::Float::forward<128, 8, 1, 1, 1>(
+  DenseLayerStream::Float::forward<128, 8, BATCH_SIZE, 1, 1, 1>(
       l2_out, params.weights_l3, params.biases_l3, output_stream, NONE, reps);
 
   StreamUtil::toarray<8>(output_stream, output, reps);
 }
 
+template<int BATCH_SIZE>
 void forward_stream_split(float *input, SingleNetParams &params,
                     float *output, int reps) {
 
@@ -232,17 +234,17 @@ void forward_stream_split(float *input, SingleNetParams &params,
 
   StreamUtil::tostream<6>(input, input_stream, reps);
 
-  DenseLayerStream::Float::forward<6, 128, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<6, 128, BATCH_SIZE, 1, 1, 1, 100>(
       input_stream, params.weights_l1, params.biases_l1, l1_out, NONE,
       reps);
   ActivationLayer::Float::leaky_relu_stream<128, 1>(
       l1_out, l1_out_copy, l1_out_relu, l1_out_relu_copy, reps);
-  DenseLayerStream::Float::forward<128, 128, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<128, 128, BATCH_SIZE, 1, 1, 1, 100>(
       l1_out_relu, params.weights_l2, params.biases_l2, l2_out, NONE,
       reps);
   ActivationLayer::Float::leaky_relu_stream<128, 1>(
       l2_out, l2_out_copy, l2_out_relu, l2_out_relu_copy, reps);
-  DenseLayerStream::Float::forward<128, 8, 1, 1, 1, 100>(
+  DenseLayerStream::Float::forward<128, 8, BATCH_SIZE, 1, 1, 1, 100>(
       l2_out_relu, params.weights_l3, params.biases_l3, l3_out, NONE,
       reps);
 
@@ -260,7 +262,7 @@ int test_inference(SingleNetParams &params) {
     float output[8];
     float expected_output[8] = { 0.1020, -0.1010, -0.1131,  0.8706, -0.2712, -0.1622, -0.1986,  0.4110 };
     
-    SingleNet::forward_stream(input, params, output, 1);
+    SingleNet::forward_stream<1>(input, params, output, 1);
 
     for (int i = 0; i < 8; i++) {
         if (fabs(output[i] - expected_output[i]) > 0.001) {
@@ -281,7 +283,7 @@ int test_inference_split(SingleNetParams &params) {
     float output[8];
     float expected_output[8] = { 0.1020, -0.1010, -0.1131,  0.8706, -0.2712, -0.1622, -0.1986,  0.4110 };
     
-    SingleNet::forward_stream_split(input, params, output, 1);
+    SingleNet::forward_stream_split<1>(input, params, output, 1);
 
     for (int i = 0; i < 8; i++) {
         if (fabs(output[i] - expected_output[i]) > 0.001) {
@@ -302,7 +304,7 @@ int test_loss(SingleNetParams &params) {
     float output[8];
     float expected_output[8] = { 0.1020, -0.1010, -0.1131,  0.8706, -0.2712, -0.1622, -0.1986,  0.4110 };
     
-    SingleNet::forward_stream(input, params, output, 1);
+    SingleNet::forward_stream<1>(input, params, output, 1);
 
     print_mat<8,1>(output);
     print_mat<8,1>(expected_output);
@@ -377,7 +379,7 @@ int test_loss_batch(SingleNetParams &params) {
         }
     }
     
-    SingleNet::forward_stream(input, params, output, 32);
+    SingleNet::forward_stream<32>(input, params, output, 32);
 
     print_mat<8,1>(output);
     print_mat<8,1>(expected_output);

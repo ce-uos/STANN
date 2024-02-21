@@ -23,64 +23,65 @@ struct SingleLayerParams {
 };
 
 namespace SingleLayer {
-    void triplicate_params(SingleLayerParams &params,
-                                  SingleLayerParams &out_params1,
-                                  SingleLayerParams &out_params2) {
-      for (int i = 0; i < SL_INPUTS * SL_OUTPUTS; i++) {
-#pragma HLS pipeline II = 3
+void triplicate_params(SingleLayerParams &params,
+                       SingleLayerParams &out_params1,
+                       SingleLayerParams &out_params2) {
+    for (int i = 0; i < SL_INPUTS * SL_OUTPUTS; i++) {
+        #pragma HLS pipeline II = 3
         out_params1.weights[i] = params.weights[i];
         out_params2.weights[i] = params.weights[i];
-      }
+    }
 
-      for (int i = 0; i < SL_OUTPUTS; i++) {
-#pragma HLS pipeline II = 3
+    for (int i = 0; i < SL_OUTPUTS; i++) {
+        #pragma HLS pipeline II = 3
         out_params1.biases[i] = params.biases[i];
         out_params2.biases[i] = params.biases[i];
-      }
     }
+}
 
-    template <int BATCH_SIZE>
-    void training(float *input, float *labels,
-                     SingleLayerParams &fw_params,
-                     SingleLayerParams &bw_params, SingleLayerParams &up_params,
-                     float learning_rate, int reps) {
-#pragma HLS Dataflow
-
-      hls::stream<float> input_stream("input_stream");
-      hls::stream<float> input_stream1("input_stream1");
-      hls::stream<float> input_stream2("input_stream2");
-      hls::stream<float> l1_out("l1_out");
-
-      StreamUtil::tostream<SL_OUTPUTS>(input, input_stream, reps);
-      StreamUtil::duplicate<SL_INPUTS * BATCH_SIZE>(input_stream, input_stream1,
-                                            input_stream2);
-      DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, 1, 1, 1, 100>(
-          input_stream1, fw_params.weights, fw_params.biases, l1_out, NONE,
-          reps);
-
-      hls::stream<float> label_stream("label_stream");
-      hls::stream<float> l1_deltas("l1_deltas");
-
-      StreamUtil::tostream<SL_OUTPUTS>(labels, label_stream, reps);
-      Loss::MeanSquaredError_derivative_stream<8, BATCH_SIZE>(
-          l1_out, label_stream, l1_deltas);
-
-      DenseLayerStream::Float::update<SL_INPUTS, SL_OUTPUTS, BATCH_SIZE, float, 1, 1, 1>(
-          l1_deltas, up_params.weights, up_params.biases, input_stream2,
-          learning_rate);
-    }
-
-
-    void forward(float *input, SingleLayerParams &params, float *output, int reps) {
+template <int BATCH_SIZE>
+void training(float *input, float *labels,
+              SingleLayerParams &fw_params,
+              SingleLayerParams &bw_params, SingleLayerParams &up_params,
+              float learning_rate, int reps) {
     #pragma HLS Dataflow
 
-        hls::stream<float> input_stream("input_stream_inference");
-        hls::stream<float> output_stream("output_stream_inference");
-        StreamUtil::tostream<SL_INPUTS>(input, input_stream, reps);
-        DenseLayerStream::Float::forward<SL_INPUTS,SL_OUTPUTS,1,1,1>(input_stream, params.weights, params.biases, output_stream, NONE, reps);
-        StreamUtil::toarray<SL_OUTPUTS>(output_stream, output, reps);
+    hls::stream<float> input_stream("input_stream");
+    hls::stream<float> input_stream1("input_stream1");
+    hls::stream<float> input_stream2("input_stream2");
+    hls::stream<float> l1_out("l1_out");
 
-    }
+    StreamUtil::tostream<SL_OUTPUTS>(input, input_stream, reps);
+    StreamUtil::duplicate<SL_INPUTS * BATCH_SIZE>(input_stream, input_stream1,
+                                                  input_stream2);
+    DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, BATCH_SIZE, 1, 1, 1, 100>(
+        input_stream1, fw_params.weights, fw_params.biases, l1_out, NONE,
+        reps);
+
+    hls::stream<float> label_stream("label_stream");
+    hls::stream<float> l1_deltas("l1_deltas");
+
+    StreamUtil::tostream<SL_OUTPUTS>(labels, label_stream, reps);
+    Loss::MeanSquaredError_derivative_stream<8, BATCH_SIZE>(
+        l1_out, label_stream, l1_deltas);
+
+    DenseLayerStream::Float::update<SL_INPUTS, SL_OUTPUTS, BATCH_SIZE, float, 1, 1, 1>(
+        l1_deltas, up_params.weights, up_params.biases, input_stream2,
+        learning_rate);
+}
+
+
+template <int BATCH_SIZE>
+void forward(float *input, SingleLayerParams &params, float *output, int reps) {
+    #pragma HLS Dataflow
+
+    hls::stream<float> input_stream("input_stream_inference");
+    hls::stream<float> output_stream("output_stream_inference");
+    StreamUtil::tostream<SL_INPUTS>(input, input_stream, reps);
+    DenseLayerStream::Float::forward<SL_INPUTS,SL_OUTPUTS,BATCH_SIZE,1,1,1>(input_stream, params.weights, params.biases, output_stream, NONE, reps);
+    StreamUtil::toarray<SL_OUTPUTS>(output_stream, output, reps);
+
+}
 }
 
 template<int M, int N>
@@ -109,7 +110,7 @@ int test_inference(SingleLayerParams &params) {
     float outputs[8]          = {0,0,0,0,0,0,0,0};
     float expected_outputs[8] = {0,0,0,0,0,0,0,0};
 
-    SingleLayer::forward(inputs, params, outputs, 1);
+    SingleLayer::forward<1>(inputs, params, outputs, 1);
 
 
     simple_matmul<SL_OUTPUTS, SL_INPUTS, 1>(params.weights, inputs, expected_outputs);
@@ -154,7 +155,7 @@ int test_inference_batch(SingleLayerParams &params) {
         0,0,0,0,0,0,0,0,
     };
 
-    SingleLayer::forward(inputs, params, outputs, 4);
+    SingleLayer::forward<4>(inputs, params, outputs, 4);
 
     simple_matmul<SL_OUTPUTS, SL_INPUTS, 4>(params.weights, inputs, expected_outputs);
     for (int j = 0; j < 4; j++) {
@@ -210,7 +211,7 @@ int test_training() {
 
     StreamUtil::tostream<SL_INPUTS>(inputs, input_stream);
     StreamUtil::duplicate<SL_INPUTS>(input_stream, input_stream1, input_stream2);
-    DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, 1, 1, 1, 100>(
+    DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, 1, 1, 1, 1, 100>(
         input_stream1, fw_params.weights, fw_params.biases, l1_out, NONE, 1);
 
     hls::stream<float> label_stream("label_stream");
@@ -306,7 +307,7 @@ int test_training_batch() {
 
     StreamUtil::tostream<SL_INPUTS>(inputs, input_stream, 4);
     StreamUtil::duplicate<SL_INPUTS*4>(input_stream, input_stream1, input_stream2);
-    DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, 1, 1, 1, 100>(
+    DenseLayerStream::Float::forward<SL_INPUTS, SL_OUTPUTS, 4, 1, 1, 1, 100>(
         input_stream1, fw_params.weights, fw_params.biases, l1_out, NONE, 4);
 
     StreamUtil::toarray<8>(l1_out, outputs, 4);
@@ -372,12 +373,12 @@ int main () {
         printf("Training test FAILED\n");
     }
 
- 
+
     if (test_training_batch() == TEST_PASSED) {
         printf("Training batch test PASSED\n");
     } else {
         printf("Training batch test FAILED\n");
     }
-    
+
     return 0;
 }

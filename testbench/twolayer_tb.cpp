@@ -85,6 +85,7 @@ namespace TwoLayer {
       }
     }
 
+template<int BATCH_SIZE>
     void forward(float *input, TwoLayerParams &params, float *output, int reps) {
     #pragma HLS Dataflow
 
@@ -93,8 +94,8 @@ namespace TwoLayer {
         hls::stream<float> l1_out("l1_out");
 
         StreamUtil::tostream<TL_INPUTS>(input, input_stream, reps);
-        DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,1,1,1>(input_stream, params.weights_l1, params.biases_l1, l1_out, NONE, reps);
-        DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,1,1,1>(l1_out, params.weights_l2, params.biases_l2, output_stream, NONE, reps);
+        DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,BATCH_SIZE,1,1,1>(input_stream, params.weights_l1, params.biases_l1, l1_out, NONE, reps);
+        DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,BATCH_SIZE,1,1,1>(l1_out, params.weights_l2, params.biases_l2, output_stream, NONE, reps);
         StreamUtil::toarray<TL_OUTPUTS>(output_stream, output, reps);
 
     }
@@ -106,7 +107,7 @@ int test_inference(TwoLayerParams &params) {
     float expected_outputs[TL_OUTPUTS] = {0,0,0,0,0,0};
     float hl_outputs[TL_HIDDEN] = {0,0,0,0,0,0,0,0};
 
-    TwoLayer::forward(inputs, params, outputs, 1);
+    TwoLayer::forward<1>(inputs, params, outputs, 1);
 
     simple_matmul<TL_HIDDEN, TL_INPUTS, 1>(params.weights_l1, inputs, hl_outputs);
     for (int i = 0; i < TL_HIDDEN; i++) {
@@ -162,7 +163,7 @@ int test_inference_batch(TwoLayerParams &params) {
         0,0,0,0,0,0,0,0,
     };
 
-    TwoLayer::forward(inputs, params, outputs, 4);
+    TwoLayer::forward<4>(inputs, params, outputs, 4);
 
     simple_matmul<TL_HIDDEN, TL_INPUTS, 4>(params.weights_l1, inputs, hl_outputs);
     for (int i = 0; i < TL_HIDDEN; i++) {
@@ -259,10 +260,10 @@ int test_training() {
 
     StreamUtil::tostream<TL_INPUTS>(inputs, input_stream);
     StreamUtil::duplicate<TL_INPUTS>(input_stream, input_stream1, input_stream2);
-    DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,1,1,1>(input_stream1, params.weights_l1, params.biases_l1, l1_out, NONE, 1);
+    DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,1,1,1,1>(input_stream1, params.weights_l1, params.biases_l1, l1_out, NONE, 1);
     ActivationLayer::Float::leaky_relu_stream<TL_HIDDEN, 1>(
         l1_out, l1_out_copy, l1_out_act, l1_out_act_copy, 1);
-    DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,1,1,1>(l1_out_act, params.weights_l2, params.biases_l2, l2_out, NONE, 1);
+    DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,1,1,1,1>(l1_out_act, params.weights_l2, params.biases_l2, l2_out, NONE, 1);
     StreamUtil::toarray<TL_OUTPUTS>(l2_out, outputs);
 
     print_mat<6, 1>(outputs);
@@ -397,10 +398,10 @@ int test_training_batch() {
 
     StreamUtil::tostream<TL_INPUTS*4>(inputs, input_stream);
     StreamUtil::duplicate<TL_INPUTS*4>(input_stream, input_stream1, input_stream2);
-    DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,1,1,1>(input_stream1, params.weights_l1, params.biases_l1, l1_out, NONE, 4);
+    DenseLayerStream::Float::forward<TL_INPUTS,TL_HIDDEN,4,1,1,1>(input_stream1, params.weights_l1, params.biases_l1, l1_out, NONE, 4);
     ActivationLayer::Float::leaky_relu_stream<TL_HIDDEN, 4>(
         l1_out, l1_out_copy, l1_out_act, l1_out_act_copy, 4);
-    DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,1,1,1>(l1_out_act, params.weights_l2, params.biases_l2, l2_out, NONE, 4);
+    DenseLayerStream::Float::forward<TL_HIDDEN,TL_OUTPUTS,4,1,1,1>(l1_out_act, params.weights_l2, params.biases_l2, l2_out, NONE, 4);
     StreamUtil::toarray<TL_OUTPUTS*4>(l2_out, outputs);
     //StreamUtil::toarray<TL_OUTPUTS>(l2_out, outputs, 4);
 
