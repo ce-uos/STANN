@@ -19,19 +19,15 @@ void matmul(T *a, T *b, T *c) {
 #pragma HLS ARRAY_PARTITION variable=b complete
 #pragma HLS ARRAY_PARTITION variable=c complete
     basic_mm_mloop: for (int m = 0; m < M; m++) {
-    #pragma HLS pipeline II=3
+    #pragma HLS pipeline II=5
         basic_mm_kloop: for (int k = 0; k < K; k++) {
             #pragma HLS unroll
             basic_mm_nloop: for (int n = 0; n < N; n++) {
             #pragma HLS unroll
-                // #pragma HLS dependence variable=a type=inter false
-                // #pragma HLS dependence variable=b type=inter false
-                // #pragma HLS dependence variable=c type=inter false
                 c[k * N + n] += a[k * M + m] * b[m * N + n];
             }
         }
     }
-
 }
 
 
@@ -61,7 +57,7 @@ void loada(T *bufferA, T *a, int k, int m) {
     #pragma HLS inline off
     for (int bk = 0; bk < BK; bk++) {
         for (int bm = 0; bm < BM; bm++) {
-        #pragma HLS pipeline II=3
+        #pragma HLS pipeline II=5
             bufferA[bk * BM + bm] = a[(k+bk) * M + (m+bm)];
         }
     }
@@ -72,7 +68,7 @@ void loadb(T *bufferB, T *b, int m, int n) {
     #pragma HLS inline off
     for (int bm = 0; bm < BM; bm++) {
         for (int bn = 0; bn < BN; bn++) {
-        #pragma HLS pipeline II=3
+        #pragma HLS pipeline II=5
             bufferB[bm * BN + bn] = b[(m+bm) * N + (n+bn)];
         }
     }
@@ -83,7 +79,7 @@ void storec(T *bufferC, T *c, int k, int n) {
     #pragma HLS inline off
     for (int bk = 0; bk < BK; bk++) {
         for (int bn = 0; bn < BN; bn++) {
-        #pragma HLS pipeline II=3
+        #pragma HLS pipeline II=5
             c[(k+bk) * N + (n+bn)] = bufferC[bk * BN + bn];
         }
     }
@@ -94,7 +90,7 @@ template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void zeroc(T *bufferC) {
     #pragma HLS inline off
     for (int c = 0; c < BK * BN; c++) {
-        #pragma HLS pipeline II=3
+        #pragma HLS pipeline II=5
         bufferC[c] = 0;
     }
 }
@@ -487,6 +483,266 @@ void blockmatmul(T *a, T *b, T*c) {
 }
 
 } // namespace basic
+
+/**
+ * Namespace for systolic array based implementations of matrix operations.
+ */
+namespace SysArrNew {
+
+/**
+ * Systolic array based matrix multiplication.
+ * Systolic array will have size MxN.
+ *
+ * @tparam  K  rows of first matrix
+ * @tparam  M  cols of first matrix, rows of second matrix
+ * @tparam  N  cols of second matrix
+ * @tparam  T  data type used for the matrices
+ *
+ * @param[in]   input              first input matrix (KxM)
+ * @param[in]   stationary_input   second input matrix (MxN)
+ * @param[out]  output             output matrix (KxN)
+ */
+template<int K, int M, int N, typename T = float>
+void matmul(T *input, T *stationary_input, T *output) {
+#pragma HLS inline
+
+    // stationary_input = MxN = number of PEs
+    // input = KxM
+    // output = KxN
+
+    T pe_state[M*N];
+    #pragma HLS ARRAY_PARTITION variable=pe_state complete
+    T stationary_buffer[M*N];
+    #pragma HLS ARRAY_PARTITION variable=stationary_buffer complete
+    T input_buffer_left[M*N];
+    #pragma HLS ARRAY_PARTITION variable=input_buffer_left complete
+    T input_buffer_top[M*N];
+    #pragma HLS ARRAY_PARTITION variable=input_buffer_top complete
+
+    // initialization
+    for(int i = 0; i < M*N; i++) {
+    #pragma HLS pipeline II=1
+        stationary_buffer[i] = stationary_input[i];
+        pe_state[i] = 0;
+        input_buffer_left[i] = 0;
+        input_buffer_top[i] = 0;
+    }
+
+    for (int t = K*2-2 + M + N; t > 0; t--) {
+    //for (int t = M + N; t > 0; t--) {
+    #pragma HLS unroll factor=1
+
+        // move input_buffer_left to the right
+        for (int m = 0; m < M; m++) {
+            for (int n = N-1; n > 0; n--) {
+                input_buffer_left[m * N + n] = input_buffer_left[m * N + n-1];
+            }
+        }
+
+        // read from input, assuming the input array is ordered for systolic computation
+        for (int m = 0; m < M; m++) {
+            int input_idx = m * (K*2) + (t-N);
+            if (input_idx >= 0 && input_idx < M * (K*2)) {
+                input_buffer_left[m * N + 0] = input[m * (K*2) + (t-N)];
+            } else {
+                input_buffer_left[m * N + 0] = 0;
+            }
+        }
+
+        // fill input_buffer_top
+        for (int m = 1; m < M; m++) {
+            for (int n = 0; n < N; n++) {
+                input_buffer_top[m * N + n] = pe_state[(m-1) * N + n];
+            }
+        }
+
+        // pe computation
+        for (int m = 0; m < M; m++) {
+        #pragma HLS unroll
+            for (int n = 0; n < N; n++) {
+            #pragma HLS unroll
+                //T tmp1 = stationary_buffer[m * N + n] * input_buffer_left[m * N + n];
+                //#pragma HLS bind_op variable=tmp1 op=fmul impl=fulldsp
+                //T tmp2 = tmp1 + input_buffer_top[m * N + n];
+                //#pragma HLS bind_op variable=tmp2 op=fadd impl=fulldsp
+                //pe_state[m * N + n] = tmp2;
+                pe_state[m * N + n] = stationary_buffer[m * N + n] * input_buffer_left[m * N + n] + input_buffer_top[m * N + n];
+            }
+        }
+
+        // move outputs down
+        for (int k = K*2-1+N-1; k > 0; k--) {
+            for (int n = 0; n < N; n++) {
+                output[k * N + n] = output[(k-1) * N + n];
+            }
+        }
+
+        // store new outpupt
+        for (int n = 0; n < N; n++) {
+            output[n] = pe_state[(M-1) * N + n];
+        }
+
+    }
+}
+
+template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
+void zeroc_systolic(T *bufferC_systolic) {
+    for (int i = 0; i < (BK*2+BN-1)*BN; i++) {
+    #pragma HLS unroll
+        bufferC_systolic[i] = 0;
+    }
+}
+
+template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
+void zeroc(T *bufferC) {
+    for (int c = 0; c < BK * BN; c++) {
+    #pragma HLS unroll
+        bufferC[c] = 0;
+    }
+}
+
+template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
+void loada(T *bufferA, T *a, int k, int m) {
+    #pragma HLS inline off
+    for (int bk = 0; bk < BK; bk++) {
+        for (int bm = 0; bm < BM; bm++) {
+        #pragma HLS pipeline II=3
+            bufferA[bm * (BK*2) + (bk+(BM-1-bm))] = a[(k+bk) * M + (m+bm)];
+        }
+    }
+}
+
+template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
+void loadb(T *bufferB, T *b, int m, int n) {
+    #pragma HLS inline off
+    for (int bm = 0; bm < BM; bm++) {
+        for (int bn = 0; bn < BN; bn++) {
+            #pragma HLS pipeline II=3
+            bufferB[bm * BN + bn] = b[(m+bm) * N + (n+bn)];
+        }
+    }
+}
+
+/**
+ * Block matrix multiplication based on systolic array. Multiplies two matrices A and B.
+ * "A" should have dimensions KxM.
+ * "B" should have dimensions MxN.
+ * "A" will be sliced into sub-matrices of size BKxBM.
+ * "B" will be sliced into sub-matrices of size BMxNB.
+ * Systolic array will have size BMxBN.
+ *
+ * @tparam  K     rows of first matrix
+ * @tparam  M     cols of first matrix, rows of second matrix
+ * @tparam  N     cols of second matrix
+ * @tparam  BK    rows of sub-matrices of first matrix
+ * @tparam  BM    cols of sub-matrices of first matrix, rows of sub-matrices of second matrix
+ * @tparam  BN    cols of sub-matrices of second matrix
+ * @tparam  T     data type used for the matrices
+ * @tparam  PII   pipelining constant for HLS
+ *
+ * @param[in]     a   first input matrix (KxM)
+ * @param[in]     b   second input matrix (MxN)
+ * @param[out]    c   output matrix (KxN)
+ */
+template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
+void blockmatmul(T *a, T *b, T*c) {
+#pragma HLS inline off
+
+    int k = 0;
+    int m = 0;
+    int n = 0;
+
+    T bufferA[BM * (BK*2)];
+    #pragma HLS ARRAY_PARTITION variable=bufferA complete
+    T bufferB[BM * BN];
+    #pragma HLS ARRAY_PARTITION variable=bufferB complete
+    T bufferC_systolic[(BK*2+BN-1) * BN];
+    #pragma HLS ARRAY_PARTITION variable=bufferC_systolic complete
+    T bufferC[BK * BN];
+    #pragma HLS ARRAY_PARTITION variable=bufferC complete
+
+    for (int i = 0; i < BM * (BK*2); i++) {
+    #pragma HLS unroll
+        bufferA[i] = 0;
+    }
+
+    for (int i = 0; i < (BK*2+BN-1)*BN; i++) {
+    #pragma HLS unroll
+        bufferC_systolic[i] = 0;
+    }
+
+    for (int i = 0; i < (K/BK) * (M/BM) * (N/BN); i++) {
+    //#pragma HLS pipeline II=PII
+
+        // systolic input
+        for (int bk = 0; bk < BK; bk++) {
+        //#pragma HLS unroll
+            for (int bm = 0; bm < BM; bm++) {
+            //#pragma HLS unroll
+                #pragma HLS pipeline II=3
+                bufferA[bm * (BK*2) + (bk+(BM-1-bm))] = a[(k+bk) * M + (m+bm)];
+            }
+        }
+
+        // stationary buffer
+        for (int bm = 0; bm < BM; bm++) {
+        //#pragma HLS unroll
+            for (int bn = 0; bn < BN; bn++) {
+            //#pragma HLS unroll
+                #pragma HLS pipeline II=3
+                bufferB[bm * BN + bn] = b[(m+bm) * N + (n+bn)];
+            }
+        }
+
+        if (m == 0) {
+            for (int c = 0; c < (BK*2-1+BN) * BN; c++) {
+            #pragma HLS unroll
+                bufferC_systolic[c] = 0;
+            }
+
+            for (int c = 0; c < BK * BN; c++) {
+            #pragma HLS unroll
+                bufferC[c] = 0;
+            }
+        }
+
+        matmul<BK,BM,BN,T>(bufferA, bufferB, bufferC_systolic);
+
+        for (int bk = 0; bk < BK; bk++) {
+        //#pragma HLS unroll
+            for (int bn = 0; bn < BN; bn++) {
+            //#pragma HLS unroll
+            #pragma HLS pipeline II=5
+            #pragma HLS dependence variable=bufferC type=inter false
+            #pragma HLS dependence variable=bufferC_systolic type=inter false
+                bufferC[bn * BK + bk] += bufferC_systolic[(bk+(BN-1-bn)) * BN + bn];
+            }
+        }
+
+        m += BM;
+        if (m >= M) {
+
+            for (int bk = 0; bk < BK; bk++) {
+            //#pragma HLS unroll
+                for (int bn = 0; bn < BN; bn++) {
+                //#pragma HLS unroll
+                    #pragma HLS pipeline II=3
+                    c[(k+bk) * N + (n+bn)] = bufferC[bn * BK + bk];
+                }
+            }
+
+            m = 0;
+            n += BN;
+            if (n >= N) {
+                k += BK;
+                n = 0;
+            }
+        }
+    }
+
+}
+
+} // namespace SysArrNew
 
 /**
  * Namespace for systolic array based implementations of matrix operations.

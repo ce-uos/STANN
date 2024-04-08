@@ -304,6 +304,101 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
     }
 } 
 
+template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, int PE1, int PE2, int PE3, int PII=20>
+void update_adam(hls::stream<float> &deltas, float *weights, float *biases, hls::stream<float> &this_input, float learning_rate) {
+
+    static float m[INPUT_DIM * OUTPUT_DIM] = {0}; // first momentum
+    static float v[INPUT_DIM * OUTPUT_DIM] = {0}; // second momentum
+    static float mb[OUTPUT_DIM] = {0}; // first momentum
+    static float vb[OUTPUT_DIM] = {0}; // second momentum
+    const float beta1 = 0.9;
+    const float beta2 = 0.999;
+    static float beta1t = 0.9;
+    static float beta2t = 0.999;
+    const float eps = 0.000000001;
+
+    float gradients[INPUT_DIM * OUTPUT_DIM];
+    float bias_gradients[OUTPUT_DIM];
+
+    float buffer[BATCH_SIZE];
+    #pragma HLS ARRAY_PARTITION variable=buffer type=complete
+
+    float input_buffer[INPUT_DIM * BATCH_SIZE];
+    StreamUtil::toarray<INPUT_DIM>(this_input, input_buffer, BATCH_SIZE);
+
+    float delta_buffer[OUTPUT_DIM * BATCH_SIZE];
+    StreamUtil::toarray<OUTPUT_DIM>(deltas, delta_buffer, BATCH_SIZE);
+    //StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(deltas, delta_buffer);
+
+
+    Matrix::blockmatmul<INPUT_DIM, BATCH_SIZE, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(input_buffer, delta_buffer, gradients);
+
+adam_bias_grads_loop : for (int y = 0; y < OUTPUT_DIM; y++) {
+        bias_gradients[y] = 0;
+        for (int b = 0; b < BATCH_SIZE; b++) {
+    #pragma HLS pipeline II=20
+            bias_gradients[y] += delta_buffer[b * OUTPUT_DIM + y];
+        }
+    }
+
+
+// adam_momentum_loop : for (int i = 0; i < INPUT_DIM * OUTPUT_DIM; i++) {
+//         #pragma HLS PIPELINE II=20
+//             float g = gradients[i];
+//             m[i] = beta1 * m[i] + (1 - beta1) * g;
+//             v[i] = beta2 * v[i] + (1 - beta2) * g * g;
+//     }
+
+// adam_bias_momentum_loop : for (int i = 0; i < OUTPUT_DIM; i++) {
+//         #pragma HLS PIPELINE II=20
+//             float g = bias_gradients[i];
+//             mb[i] = beta1 * mb[i] + (1 - beta1) * g;
+//             vb[i] = beta2 * vb[i] + (1 - beta2) * g * g;
+//     }
+
+adam_weights_loop : for (int i = 0; i < INPUT_DIM; i++) {
+        for (int j = 0; j < OUTPUT_DIM; j++) {
+        #pragma HLS PIPELINE II=50
+            float g = gradients[i * OUTPUT_DIM + j];
+            float newm = beta1 * m[i] + (1 - beta1) * g;
+            float newv = beta2 * v[i] + (1 - beta2) * g * g;
+            float mhat = newm / (1 - beta1t);
+            float vhat = newv / (1 - beta2t);
+            float grad = mhat / (sqrt(vhat) + eps);
+            weights[j * INPUT_DIM + i] -= learning_rate * grad;
+            m[i * OUTPUT_DIM + j] = newm;
+            v[i * OUTPUT_DIM + j] = newv;
+        }
+    }
+
+adam_bias_loop : for (int i = 0; i < OUTPUT_DIM; i++) {
+        #pragma HLS PIPELINE II=50
+        float g = bias_gradients[i];
+        float newmb = beta1 * mb[i] + (1 - beta1) * g;
+        float newvb = beta2 * vb[i] + (1 - beta2) * g * g;
+        float mhat = newmb / (1 - beta1t);
+        float vhat = newvb / (1 - beta2t);
+        float grad = mhat / (sqrt(vhat) + eps);
+        biases[i] -= learning_rate * grad;
+        mb[i] = newmb;
+        vb[i] = newvb;
+    }
+
+    // for (int y = 0; y < OUTPUT_DIM; y++) {
+    // #pragma HLS pipeline II=20
+    //     for (int b = 0; b < BATCH_SIZE; b++) {
+    //     #pragma HLS unroll
+    //         buffer[b] = learning_rate * delta_buffer[b * OUTPUT_DIM + y];
+    //     }
+    //     for (int b = 0; b < BATCH_SIZE; b++) {
+    //         biases[y] -= buffer[b] / BATCH_SIZE;
+    //     }
+    // }
+    //
+    beta1t = beta1t * beta1;
+    beta2t = beta2t * beta2;
+} 
+
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=100>
 void update_clipped(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, T learning_rate) {
 
