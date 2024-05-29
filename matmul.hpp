@@ -19,7 +19,7 @@ void matmul(T *a, T *b, T *c) {
 #pragma HLS ARRAY_PARTITION variable=b complete
 #pragma HLS ARRAY_PARTITION variable=c complete
     basic_mm_mloop: for (int m = 0; m < M; m++) {
-    #pragma HLS pipeline II=5
+    #pragma HLS pipeline II=10
         basic_mm_kloop: for (int k = 0; k < K; k++) {
             #pragma HLS unroll
             basic_mm_nloop: for (int n = 0; n < N; n++) {
@@ -55,9 +55,9 @@ void matmul(T *a, T *b, T *c) {
 template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void loada(T *bufferA, T *a, int k, int m) {
     #pragma HLS inline off
-    for (int bk = 0; bk < BK; bk++) {
-        for (int bm = 0; bm < BM; bm++) {
-        #pragma HLS pipeline II=5
+loada_loop_bk: for (int bk = 0; bk < BK; bk++) {
+    loada_loop_bm: for (int bm = 0; bm < BM; bm++) {
+        #pragma HLS pipeline II=10
             bufferA[bk * BM + bm] = a[(k+bk) * M + (m+bm)];
         }
     }
@@ -66,9 +66,9 @@ void loada(T *bufferA, T *a, int k, int m) {
 template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void loadb(T *bufferB, T *b, int m, int n) {
     #pragma HLS inline off
-    for (int bm = 0; bm < BM; bm++) {
-        for (int bn = 0; bn < BN; bn++) {
-        #pragma HLS pipeline II=5
+loadb_loop_bm: for (int bm = 0; bm < BM; bm++) {
+    loadb_loop_bn: for (int bn = 0; bn < BN; bn++) {
+        #pragma HLS pipeline II=10
             bufferB[bm * BN + bn] = b[(m+bm) * N + (n+bn)];
         }
     }
@@ -77,9 +77,9 @@ void loadb(T *bufferB, T *b, int m, int n) {
 template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void storec(T *bufferC, T *c, int k, int n) {
     #pragma HLS inline off
-    for (int bk = 0; bk < BK; bk++) {
-        for (int bn = 0; bn < BN; bn++) {
-        #pragma HLS pipeline II=5
+storec_loop_bk: for (int bk = 0; bk < BK; bk++) {
+    storec_loop_bn: for (int bn = 0; bn < BN; bn++) {
+        #pragma HLS pipeline II=10
             c[(k+bk) * N + (n+bn)] = bufferC[bk * BN + bn];
         }
     }
@@ -89,8 +89,8 @@ void storec(T *bufferC, T *c, int k, int n) {
 template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void zeroc(T *bufferC) {
     #pragma HLS inline off
-    for (int c = 0; c < BK * BN; c++) {
-        #pragma HLS pipeline II=5
+zeroc_loop: for (int c = 0; c < BK * BN; c++) {
+        #pragma HLS pipeline II=10
         bufferC[c] = 0;
     }
 }
@@ -101,9 +101,9 @@ void compute_unit(T *a, T *b, T *bufferC, int k, int m, int n) {
     #pragma HLS Dataflow
 
     T bufferA[BK * BM];
-    #pragma HLS ARRAY_PARTITION variable=bufferA complete
+    //#pragma HLS ARRAY_PARTITION variable=bufferA complete
     T bufferB[BM * BN];
-    #pragma HLS ARRAY_PARTITION variable=bufferB complete
+    //#pragma HLS ARRAY_PARTITION variable=bufferB complete
 
     loada<K,M,N,BK,BM,BN,T,PII>(bufferA, a, k, m);
     loadb<K,M,N,BK,BM,BN,T,PII>(bufferB, b, m, n);
@@ -115,25 +115,50 @@ template<int K, int M, int N, int BK, int BM, int BN, typename T, int PII = 1>
 void blockmatmul(T *a, T *b, T*c) {
 #pragma HLS inline off
 
-    T bufferA[BK * BM];
-    #pragma HLS ARRAY_PARTITION variable=bufferA complete
-    T bufferB[BM * BN];
-    #pragma HLS ARRAY_PARTITION variable=bufferB complete
     T bufferC[BK * BN];
-    #pragma HLS ARRAY_PARTITION variable=bufferC complete
+    //#pragma HLS ARRAY_PARTITION variable=bufferC complete
 
-    for (int k = 0; k < K; k += BK) {
-        for (int n = 0; n < N; n += BN) {
-            zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
-            for (int m = 0; m < M; m += BM) {
-                #pragma HLS unroll factor=1
-                compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k, m, n);
-                // loada<K,M,N,BK,BM,BN,T,PII>(bufferA, a, k, m);
-                // loadb<K,M,N,BK,BM,BN,T,PII>(bufferB, b, m, n);
-                //
-                // matmul<BK,BM,BN,T>(bufferA, bufferB, bufferC);
+    // for (int k = 0; k < K; k += BK) {
+    //     for (int n = 0; n < N; n += BN) {
+    //         for (int m = 0; m < M; m += BM) {
+    //             #pragma HLS pipeline II=20
+    //             if (m == 0) {
+    //                 zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
+    //             }
+    //             compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k, m, n);
+    //             if (m == M-1) {
+    //                 storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k, n);
+    //             }
+    //         }
+    //     }
+    // }
+
+    // int k = 0;
+    // int m = 0;
+    // int n = 0;
+    // for (int i = 0; i < (K/BK) * (N/BN) * (M/BM); i++) {
+    //     if (m == 0) {
+    //         zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
+    //     }
+    //     compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k, m, n);
+    //     if (m == M-1) {
+    //         storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k, n);
+    //     }
+    //
+    //     k += 1;
+    // }
+bmm_loop_k: for (int k = 0; k < K/BK; k += 1) {
+    bmm_loop_n: for (int n = 0; n < N/BN; n += 1) {
+        bmm_loop_m: for (int m = 0; m < M/BM; m += 1) {
+                #pragma HLS pipeline II=10
+                if (m == 0) {
+                    zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
+                }
+                compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k*BK, m*BM, n*BN);
+                if (m == (M/BM)-1) {
+                    storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k*BK, n*BN);
+                }
             }
-            storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k, n);
         }
     }
 }

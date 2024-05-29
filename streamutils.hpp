@@ -4,11 +4,19 @@
 #include <stdio.h>
 
 #include "stann.hpp"
+#include "utils.hpp"
 
 /**
  * This namespace contains some useful utility functions to handle streams.
  */
 namespace StreamUtil {
+
+template<int DIM, typename T = DEFAULT_DATATYPE>
+void sink(hls::stream<T> &input) {
+    for (int i = 0; i < DIM; i++) {
+        input.read();
+    }
+}
 
 template<int INPUT_DIM>
 void print_stream_float(hls::stream<float> &input, hls::stream<float> &output, int reps) {

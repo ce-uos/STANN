@@ -105,6 +105,21 @@ loss_loop:
 }
 
 template<int OUTPUT_DIM, int BATCH_SIZE = 1, typename T = DEFAULT_DATATYPE>
+void MeanSquaredErrorDQN_derivative(T *output, T *target, T *derr) {
+
+loss_loop:
+    for (int i = 0; i < OUTPUT_DIM; i++) {
+        for (int j = 0; j < BATCH_SIZE; j++) {
+            // derr = BxO
+            // target = OxB
+            // output = BxO (NOT OxB, output of FW is transposed because of the streams!)
+            derr[j * OUTPUT_DIM + i] = (-(target[j * OUTPUT_DIM + i] - output[j * OUTPUT_DIM + i]) * 2);
+        }
+    }
+
+}
+
+template<int OUTPUT_DIM, int BATCH_SIZE = 1, typename T = DEFAULT_DATATYPE>
 void MeanSquaredErrorDQN_derivative_stream(hls::stream<T> &output, hls::stream<T> &target, hls::stream<T> &derr) {
 
     T output_buffer[OUTPUT_DIM * BATCH_SIZE];

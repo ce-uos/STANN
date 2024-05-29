@@ -32,8 +32,9 @@ namespace {
  */
 template<int DIM, typename T>
 void add_bias(hls::stream<T> &input, T *biases, hls::stream<T> &output, int reps) {
-    for (int r = 0; r < reps; r++) {
-        for (int i = 0; i < DIM; i++) {
+add_bias_loop1: for (int r = 0; r < reps; r++) {
+    add_bias_loop2: for (int i = 0; i < DIM; i++) {
+            #pragma HLS pipeline II=5
             T val = input.read();
             val += biases[i];
             output.write(val);
@@ -64,8 +65,9 @@ inline float clip(float val) {
  */
 template<int DIM>
 void apply_activation_float(hls::stream<float> &input, hls::stream<float> &output, activation_t act, int reps) {
-    for (int r = 0; r < reps; r++) {
-        for (int i = 0; i < DIM; i++) {
+apply_act_float_loop1: for (int r = 0; r < reps; r++) {
+    apply_act_float_loop2: for (int i = 0; i < DIM; i++) {
+            #pragma HLS pipeline II=5
             float val = input.read();
             float out_val = val;
             if (act == LEAKY_RELU) {
@@ -244,12 +246,17 @@ void backward(float *this_output, float *next_weights, hls::stream<float> &delta
  * @param[in]       learning_rate   learning rate for training
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=20>
-void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, T learning_rate) {
+void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_input, const T learning_rate) {
+
+    const float learning_rate2 = learning_rate / BATCH_SIZE;
 
     T gradients[INPUT_DIM * OUTPUT_DIM];
 
     T buffer[BATCH_SIZE];
     #pragma HLS ARRAY_PARTITION variable=buffer type=complete
+
+    T wbuffer[OUTPUT_DIM];
+    #pragma HLS ARRAY_PARTITION variable=wbuffer type=complete
 
     T input_buffer[INPUT_DIM * BATCH_SIZE];
     StreamUtil::toarray<INPUT_DIM>(this_input, input_buffer, BATCH_SIZE);
@@ -281,25 +288,45 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
     //printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
     //printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
 
-    for (int i = 0; i < INPUT_DIM; i++) {
-        for (int j = 0; j < OUTPUT_DIM; j++) {
-        #pragma HLS PIPELINE II=3
-            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
-            weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
+update_grad_loop_input: for (int i = 0; i < INPUT_DIM; i++) {
+    update_grad_loop_output: for (int j = 0; j < OUTPUT_DIM; j++) {
+        #pragma HLS PIPELINE II=20
+            gradients[i * OUTPUT_DIM + j] *= learning_rate2;
         }
     }
 
-    for (int y = 0; y < OUTPUT_DIM; y++) {
-    #pragma HLS pipeline II=20
-        for (int b = 0; b < BATCH_SIZE; b++) {
-        #pragma HLS unroll
+update_main_loop_input: for (int i = 0; i < INPUT_DIM; i++) {
+    update_main_loop_output1: for (int j = 0; j < OUTPUT_DIM; j++) {
+        #pragma HLS PIPELINE II=20
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
+            wbuffer[j] = (weights[j * INPUT_DIM + i] - gradients[i * OUTPUT_DIM + j]);// * 0.3125;
+            //weights[j * INPUT_DIM + i] -= learning_rate2 * (gradients[i * OUTPUT_DIM + j]);// * 0.3125;
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
+        }
+    update_main_loop_output2: for (int j = 0; j < OUTPUT_DIM; j++) {
+        #pragma HLS PIPELINE II=20
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j] / BATCH_SIZE * 2);
+            weights[j * INPUT_DIM + i] -= wbuffer[j];
+            //weights[j * INPUT_DIM + i] -= (gradients[i * OUTPUT_DIM + j]);// * 0.3125;
+            //weights[j * INPUT_DIM + i] -= learning_rate2 * (gradients[i * OUTPUT_DIM + j]);// * 0.3125;
+            //weights[j * INPUT_DIM + i] -= learning_rate * (gradients[i * OUTPUT_DIM + j]) / BATCH_SIZE;
+        }
+    }
+
+update_bias_loop_output: for (int y = 0; y < OUTPUT_DIM; y++) {
+    //#pragma HLS pipeline II=80
+    update_bias_loop_batchsize1: for (int b = 0; b < BATCH_SIZE; b++) {
+        #pragma HLS pipeline II=20
+        //#pragma HLS unroll
             // TODO transpose?
             // delta buffer is BxO, so OUTPUT_DIM columns
-            buffer[b] = learning_rate * delta_buffer[b * OUTPUT_DIM + y];
+            buffer[b] = learning_rate2 * delta_buffer[b * OUTPUT_DIM + y];
             //buffer[b] = learning_rate * delta_buffer[y * BATCH_SIZE + b];
         }
-        for (int b = 0; b < BATCH_SIZE; b++) {
-            biases[y] -= buffer[b] / BATCH_SIZE;
+    update_bias_loop_batchsize2: for (int b = 0; b < BATCH_SIZE; b++) {
+        #pragma HLS pipeline II=20
+            biases[y] -= buffer[b];// * 0.3125;
+            //biases[y] -= buffer[b] / BATCH_SIZE;
         }
     }
 } 
@@ -315,7 +342,7 @@ void update_adam(hls::stream<float> &deltas, float *weights, float *biases, hls:
     const float beta2 = 0.999;
     static float beta1t = 0.9;
     static float beta2t = 0.999;
-    const float eps = 0.000000001;
+    const float eps = 0.00000001;
 
     float gradients[INPUT_DIM * OUTPUT_DIM];
     float bias_gradients[OUTPUT_DIM];
@@ -342,29 +369,15 @@ adam_bias_grads_loop : for (int y = 0; y < OUTPUT_DIM; y++) {
     }
 
 
-// adam_momentum_loop : for (int i = 0; i < INPUT_DIM * OUTPUT_DIM; i++) {
-//         #pragma HLS PIPELINE II=20
-//             float g = gradients[i];
-//             m[i] = beta1 * m[i] + (1 - beta1) * g;
-//             v[i] = beta2 * v[i] + (1 - beta2) * g * g;
-//     }
-
-// adam_bias_momentum_loop : for (int i = 0; i < OUTPUT_DIM; i++) {
-//         #pragma HLS PIPELINE II=20
-//             float g = bias_gradients[i];
-//             mb[i] = beta1 * mb[i] + (1 - beta1) * g;
-//             vb[i] = beta2 * vb[i] + (1 - beta2) * g * g;
-//     }
-
 adam_weights_loop : for (int i = 0; i < INPUT_DIM; i++) {
         for (int j = 0; j < OUTPUT_DIM; j++) {
         #pragma HLS PIPELINE II=50
             float g = gradients[i * OUTPUT_DIM + j];
-            float newm = beta1 * m[i] + (1 - beta1) * g;
-            float newv = beta2 * v[i] + (1 - beta2) * g * g;
+            float newm = beta1 * m[i * OUTPUT_DIM + j] + (1 - beta1) * g;
+            float newv = beta2 * v[i * OUTPUT_DIM + j] + (1 - beta2) * g * g;
             float mhat = newm / (1 - beta1t);
             float vhat = newv / (1 - beta2t);
-            float grad = mhat / (sqrt(vhat) + eps);
+            float grad = mhat / (sqrtf(vhat) + eps);
             weights[j * INPUT_DIM + i] -= learning_rate * grad;
             m[i * OUTPUT_DIM + j] = newm;
             v[i * OUTPUT_DIM + j] = newv;
@@ -378,23 +391,12 @@ adam_bias_loop : for (int i = 0; i < OUTPUT_DIM; i++) {
         float newvb = beta2 * vb[i] + (1 - beta2) * g * g;
         float mhat = newmb / (1 - beta1t);
         float vhat = newvb / (1 - beta2t);
-        float grad = mhat / (sqrt(vhat) + eps);
+        float grad = mhat / (sqrtf(vhat) + eps);
         biases[i] -= learning_rate * grad;
         mb[i] = newmb;
         vb[i] = newvb;
     }
 
-    // for (int y = 0; y < OUTPUT_DIM; y++) {
-    // #pragma HLS pipeline II=20
-    //     for (int b = 0; b < BATCH_SIZE; b++) {
-    //     #pragma HLS unroll
-    //         buffer[b] = learning_rate * delta_buffer[b * OUTPUT_DIM + y];
-    //     }
-    //     for (int b = 0; b < BATCH_SIZE; b++) {
-    //         biases[y] -= buffer[b] / BATCH_SIZE;
-    //     }
-    // }
-    //
     beta1t = beta1t * beta1;
     beta2t = beta2t * beta2;
 } 
