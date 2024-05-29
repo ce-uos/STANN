@@ -4,11 +4,19 @@
 #include <stdio.h>
 
 #include "stann.hpp"
+#include "utils.hpp"
 
 /**
  * This namespace contains some useful utility functions to handle streams.
  */
 namespace StreamUtil {
+
+template<int DIM, typename T = DEFAULT_DATATYPE>
+void sink(hls::stream<T> &input) {
+    for (int i = 0; i < DIM; i++) {
+        input.read();
+    }
+}
 
 template<int INPUT_DIM>
 void print_stream_float(hls::stream<float> &input, hls::stream<float> &output, int reps) {
@@ -51,8 +59,10 @@ void tostream(T *input, hls::stream<T> &output) {
 template<int INPUT_DIM, typename T = DEFAULT_DATATYPE>
 void tostream(T *input, hls::stream<T> &output, int reps) {
 #pragma HLS inline
+tostream_loop:
     for (int r = 0; r < reps; r++) {
         for (int i = 0; i < INPUT_DIM; i++) {
+            #pragma HLS pipeline II=20
             //output.write(input[r * INPUT_DIM + i]);
             output.write(input[i * reps + r]);
         }
@@ -222,7 +232,8 @@ void batchtostream(T *input, hls::stream<T> &output) {
 template<int SIZE, typename T = DEFAULT_DATATYPE>
 void duplicate(hls::stream<T> &in_stream, hls::stream<T> &out_stream1, hls::stream<T> &out_stream2) {
 #pragma HLS inline
-    for (int i = 0; i < SIZE; i++) {
+duplicate_loop: for (int i = 0; i < SIZE; i++) {
+        #pragma HLS pipeline II=20
         T d = in_stream.read();
         out_stream1.write(d);
         out_stream2.write(d);

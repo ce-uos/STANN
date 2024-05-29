@@ -3,7 +3,7 @@
 
 #include "stann.hpp"
 
-namespace Matrix = MatrixUtil::SysArr;
+namespace Matrix = MatrixUtil::New;
 
 /**
  * This namespace contains all functions for dense neural network layers (fully connected layers).
@@ -191,7 +191,6 @@ namespace Float {
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE = 1, int PE1 = 1, int PE2 = 1, int PE3 = 1>
 void forward(float *input, float *weights, float *biases, float *output, activation_t act, int inst) {
-#pragma HLS inline
 #pragma HLS function_instantiate variable=inst
 
     Matrix::blockmatmul<OUTPUT_DIM, INPUT_DIM, BATCH_SIZE, PE1, PE2, PE3, float, 80>(weights, input, output);
@@ -290,7 +289,6 @@ void forward(float *input, float *weights, float *biases, float *output, activat
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int NEXT_LAYER_DIM, int BATCH_SIZE = 1, int PE1 = 1, int PE2 = 1, int PE3 = 1>
 void backward(float *this_output, float *next_weights, float* delta_next, float *delta, activation_t derivative, int inst) {
-#pragma HLS inline
 #pragma HLS function_instantiate variable=inst
 
     Matrix::blockmatmul<BATCH_SIZE, NEXT_LAYER_DIM, OUTPUT_DIM, PE1, PE2, PE3, float, 15>(delta_next, next_weights, delta);
@@ -322,7 +320,6 @@ void backward(float *this_output, float *next_weights, float* delta_next, float 
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE = 1>
 void update_old(float *deltas, float *weights, float *biases, float *this_input, float learning_rate, int inst) {
-#pragma HLS inline
 #pragma HLS function_instantiate variable=inst
     update_weights<INPUT_DIM, OUTPUT_DIM, BATCH_SIZE, float, 4, 5>(deltas, weights, this_input, learning_rate);
     update_biases<OUTPUT_DIM, BATCH_SIZE, float, 5>(deltas, biases, learning_rate);
@@ -342,9 +339,11 @@ void update_old(float *deltas, float *weights, float *biases, float *this_input,
  * @param   learning_rate  the learning rate for the update
  */
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, int PE1, int PE2, int PE3, int PII=80>
-void update(float *deltas, float *weights, float *biases, float *this_input, float learning_rate, int inst) {
+void update(float *deltas, float *weights, float *biases, float *this_input, float learning_rate) {
 #pragma HLS inline
-#pragma HLS function_instantiate variable=inst
+
+    const float learning_rate2 = learning_rate / BATCH_SIZE;
+
     float gradients[INPUT_DIM * OUTPUT_DIM];
 
     float buffer[BATCH_SIZE];
@@ -356,18 +355,22 @@ void update(float *deltas, float *weights, float *biases, float *this_input, flo
         for (int j = 0; j < OUTPUT_DIM; j++) {
         #pragma HLS PIPELINE II=3
             //weights[j * INPUT_DIM + i] -= gradients[j * INPUT_DIM + i];
-            weights[j * INPUT_DIM + i] -= learning_rate * gradients[j * INPUT_DIM + i];
+            weights[j * INPUT_DIM + i] -= learning_rate2 * gradients[i * OUTPUT_DIM + j];
         }
     }
 
-    for (int y = 0; y < OUTPUT_DIM; y++) {
-    #pragma HLS pipeline II=20
-        for (int b = 0; b < BATCH_SIZE; b++) {
+update_bias_loop_output: for (int y = 0; y < OUTPUT_DIM; y++) {
+    #pragma HLS pipeline II=80
+    update_bias_loop_batchsize1: for (int b = 0; b < BATCH_SIZE; b++) {
         #pragma HLS unroll
-            buffer[b] = learning_rate * deltas[b * OUTPUT_DIM + y];
+            // TODO transpose?
+            // delta buffer is BxO, so OUTPUT_DIM columns
+            buffer[b] = learning_rate2 * deltas[b * OUTPUT_DIM + y];
+            //buffer[b] = learning_rate * delta_buffer[y * BATCH_SIZE + b];
         }
-        for (int b = 0; b < BATCH_SIZE; b++) {
-            biases[y] -= buffer[b];
+    update_bias_loop_batchsize2: for (int b = 0; b < BATCH_SIZE; b++) {
+            biases[y] -= buffer[b];// * 0.3125;
+            //biases[y] -= buffer[b] / BATCH_SIZE;
         }
     }
 }
