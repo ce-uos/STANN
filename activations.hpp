@@ -118,7 +118,7 @@ void softmax(T* input, T* output){
  *
  * @return  Sigmoid of input
  */
-float sigmoid_act(float input){
+float sigmoid_simple(float input){
     return (1 / (1 + exp(-input)));
 }
 
@@ -129,8 +129,13 @@ float sigmoid_act(float input){
  *
  * @return  tanh of input
  */
-float tanh_act(float input){
+float tanh_simple(float input){
     return tanh(input);
+}
+
+float tanh_simple_derivative(float input){
+    float tmp = tanh(input);
+    return 1 - tmp * tmp;
 }
 
 /**
@@ -140,7 +145,7 @@ float tanh_act(float input){
  *
  * @return  Softmax of input
  */
-float softmax_act(float input1, float input2){
+float softmax_simple(float input1, float input2){
     return exp(input1) / input2;
 }
 
@@ -326,6 +331,19 @@ void leaky_relu_stream(hls::stream<float> &input, hls::stream<float> &output, in
     }
 }
 
+template<int OUTDIM>
+void tanh_stream(hls::stream<float> &input, hls::stream<float> &output, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            tmp = Activation::tanh_simple(tmp);
+            output.write(tmp);
+        }
+    }
+}
+
 /**
  * Leaky ReLU activation layer. This implementation makes copies of the input
  * and output stream.
@@ -347,6 +365,21 @@ void leaky_relu_stream(hls::stream<float> &input, hls::stream<float> &input_copy
             float tmp = input.read();
             input_copy.write(tmp);
             tmp = Activation::leaky_relu_simple(tmp);
+            output.write(tmp);
+            output_copy.write(tmp);
+        }
+    }
+}
+
+template<int OUTDIM>
+void tanh_stream(hls::stream<float> &input, hls::stream<float> &input_copy, hls::stream<float> &output, hls::stream<float> &output_copy, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy.write(tmp);
+            tmp = Activation::tanh_simple(tmp);
             output.write(tmp);
             output_copy.write(tmp);
         }
@@ -377,6 +410,20 @@ void leaky_relu_stream(hls::stream<float> &input, hls::stream<float> &input_copy
     }
 }
 
+template<int OUTDIM>
+void tanh_stream(hls::stream<float> &input, hls::stream<float> &input_copy, hls::stream<float> &output, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy.write(tmp);
+            tmp = Activation::tanh_simple(tmp);
+            output.write(tmp);
+        }
+    }
+}
+
 /**
  * Leaky ReLU activation layer. This implementation makes copies of the input
  * and output stream.
@@ -400,6 +447,49 @@ void leaky_relu_stream(hls::stream<float> &input, float *input_copy, hls::stream
             tmp = Activation::leaky_relu_simple(tmp);
             output.write(tmp);
             output_copy.write(tmp);
+        }
+    }
+}
+
+template<int OUTDIM, int BATCH_SIZE>
+void tanh_stream(hls::stream<float> &input, float *input_copy, hls::stream<float> &output, hls::stream<float> &output_copy, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy[j * BATCH_SIZE + i] = tmp;
+            tmp = Activation::tanh_simple(tmp);
+            output.write(tmp);
+            output_copy.write(tmp);
+        }
+    }
+}
+
+template<int OUTDIM, int BATCH_SIZE>
+void leaky_relu_stream(hls::stream<float> &input, float *input_copy, hls::stream<float> &output, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy[j * BATCH_SIZE + i] = tmp;
+            tmp = Activation::leaky_relu_simple(tmp);
+            output.write(tmp);
+        }
+    }
+}
+
+template<int OUTDIM, int BATCH_SIZE>
+void tanh_stream(hls::stream<float> &input, float *input_copy, hls::stream<float> &output, int reps) {
+#pragma HLS inline
+    for (int i = 0; i < reps; i++) {
+        for (int j = 0; j < OUTDIM; j++) {
+            //   #pragma HLS pipeline II=10
+            float tmp = input.read();
+            input_copy[j * BATCH_SIZE + i] = tmp;
+            tmp = Activation::tanh_simple(tmp);
+            output.write(tmp);
         }
     }
 }

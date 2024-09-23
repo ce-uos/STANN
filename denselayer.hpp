@@ -182,7 +182,7 @@ namespace Float {
  *  @tparam   OUTPUT_DIM  number of neurons of this layer
  *  @tparam   BATCH_SIZE  batch size to work with
  *
- *  @param  input       input from previous layer
+ *  @param  input       input from previous layerde
  *  @param  weights     weights of this layer
  *  @param  biases      biases of this layer
  *  @param  output      output produced by this layer

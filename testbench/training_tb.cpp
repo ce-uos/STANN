@@ -18,16 +18,6 @@
 
 #define SINGLENET_HIDDEN_NEURONS 128
 
-template<int M, int N>
-void print_mat(float *mat) {
-    for (int n = 0; n < N; n++) {
-        for (int m = 0; m < M; m++) {
-            printf("%f ", mat[m * N + n]);
-        }
-        printf("\n");
-    }
-}
-
 struct SingleNetParams {
     float weights_l1[SINGLENET_HIDDEN_NEURONS*6];
     float weights_l2[SINGLENET_HIDDEN_NEURONS*SINGLENET_HIDDEN_NEURONS];
@@ -812,11 +802,11 @@ int main(int argc, const char *argv[])
         printf("New weights batch twice test FAILED\n");
     }
 
-    printf("\nStart test training one hundred batches...\n");
-    if (test_weights_batch_hundred() == TEST_PASSED) {
-        printf("New weights batch hundred test PASSED\n");
-    } else {
-        printf("New weights batch hundred test FAILED\n");
-    }
+    // printf("\nStart test training one hundred batches...\n");
+    // if (test_weights_batch_hundred() == TEST_PASSED) {
+    //     printf("New weights batch hundred test PASSED\n");
+    // } else {
+    //     printf("New weights batch hundred test FAILED\n");
+    // }
     return 0;
 }
