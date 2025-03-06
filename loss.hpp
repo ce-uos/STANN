@@ -2,6 +2,7 @@
 #define __STANN_HLS_LOSS_HPP__
 
 #include "stann.hpp"
+#include "utils.hpp"
 
 /**
  * This namespace contains implementations of loss functions and their derivatives.
@@ -91,17 +92,60 @@ void MeanSquaredError_derivative_stream(hls::stream<T> &output, hls::stream<T> &
     StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(output, output_buffer);
     StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(target, target_buffer);
 
+    // printf("target\n");
+    // print_mat<OUTPUT_DIM, BATCH_SIZE>(target_buffer);
+    //
+    // printf("output\n");
+    // print_mat<OUTPUT_DIM, BATCH_SIZE>(output_buffer);
+
 loss_loop:
     for (int i = 0; i < OUTPUT_DIM; i++) {
         for (int j = 0; j < BATCH_SIZE; j++) {
             // derr = BxO
             // target = OxB
             // output = BxO (NOT OxB, output of FW is transposed because of the streams!)
-            derr_buffer[j * OUTPUT_DIM + i] = (-(target_buffer[j * OUTPUT_DIM + i] - output_buffer[j * OUTPUT_DIM + i]) / (OUTPUT_DIM / 2));
+            derr_buffer[j * OUTPUT_DIM + i] = 2*((output_buffer[j * OUTPUT_DIM + i] - target_buffer[j * OUTPUT_DIM + i]) / OUTPUT_DIM);
         }
     }
 
+    // printf("loss\n");
+    // print_mat<OUTPUT_DIM, BATCH_SIZE>(derr_buffer);
+
     StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr, BATCH_SIZE);
+}
+
+template<int OUTPUT_DIM, int BATCH_SIZE = 1, typename T = DEFAULT_DATATYPE>
+void MeanSquaredError_derivative_stream_new(hls::stream<T> &output, hls::stream<T> &target, hls::stream<T> &derr) {
+
+    T output_buffer[OUTPUT_DIM * BATCH_SIZE];
+    T target_buffer[OUTPUT_DIM * BATCH_SIZE];
+    T derr_buffer[OUTPUT_DIM];
+
+    StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(output, output_buffer);
+    StreamUtil::toarray<OUTPUT_DIM * BATCH_SIZE>(target, target_buffer);
+
+    // printf("target\n");
+    // print_mat<OUTPUT_DIM, BATCH_SIZE>(target_buffer);
+    //
+    // printf("output\n");
+    // print_mat<OUTPUT_DIM, BATCH_SIZE>(output_buffer);
+
+loss_loop:
+    for (int i = 0; i < OUTPUT_DIM; i++) {
+        derr_buffer[i] = 0;
+        for (int j = 0; j < BATCH_SIZE; j++) {
+            // derr = BxO
+            // target = OxB
+            // output = BxO (NOT OxB, output of FW is transposed because of the streams!)
+            derr_buffer[i] += 2*((output_buffer[j * OUTPUT_DIM + i] - target_buffer[j * OUTPUT_DIM + i]) / OUTPUT_DIM);
+        }
+        derr_buffer[i] /= BATCH_SIZE;
+    }
+
+    // printf("loss\n");
+    // print_mat<OUTPUT_DIM, 1>(derr_buffer);
+
+    StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr);
 }
 
 template<int OUTPUT_DIM, int BATCH_SIZE = 1, typename T = DEFAULT_DATATYPE>
@@ -140,6 +184,7 @@ loss_loop:
     }
 
     StreamUtil::tostream<OUTPUT_DIM>(derr_buffer, derr, BATCH_SIZE);
+
 }
 
 /**

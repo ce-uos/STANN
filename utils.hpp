@@ -38,4 +38,25 @@ typedef enum {
     RELU = 7
 } activation_t;
 
+template<int M, int N>
+void print_mat(float *mat) {
+    for (int m = 0; m < M; m++) {
+        for (int n = 0; n < N; n++) {
+            printf("%f ", mat[m * N + n]);
+        }
+        printf("\n");
+    }
+}
+
+template<int M, int N>
+void print_mat(float *mat, float scale) {
+    for (int m = 0; m < M; m++) {
+        for (int n = 0; n < N; n++) {
+            printf("%f ", mat[m * N + n] / scale);
+        }
+        printf("\n");
+    }
+}
+
+
 #endif
