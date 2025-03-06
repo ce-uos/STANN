@@ -78,7 +78,7 @@ apply_act_float_loop1: for (int r = 0; r < reps; r++) {
             } else if (act == LIN_TANH) {
                 out_val = Activation::lin_tanh_simple(val);
             } else if (act == TANH) {
-                out_val = Activation::lin_tanh(val);
+                out_val = Activation::tanh_simple(val);
             }
             output.write(out_val);
         }
@@ -149,6 +149,8 @@ void apply_activation_derivative_float_inplace(float *delta_in, float *this_outp
             if (act == LEAKY_RELU) {
                 delta_in[j * DIM + i] *= Activation::leaky_relu_simple_derivative(this_output[i * BATCH_SIZE + j]);
                 //delta_in[j * DIM + i] *= Activation::leaky_relu_simple_derivative(this_output[j * DIM + i]);
+            } else if (act == TANH) {
+                delta_in[j * DIM + i] *= Activation::tanh_simple_derivative(this_output[i * BATCH_SIZE + j]);
             }
         }
     }
@@ -229,6 +231,12 @@ void backward(float *this_output, float *next_weights, hls::stream<float> &delta
     //apply_activation_derivative_float<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, delta, derivative);
     apply_activation_derivative_float_inplace<OUTPUT_DIM, BATCH_SIZE>(delta_noact, this_output, derivative);
     //StreamUtil::tostream<OUTPUT_DIM * BATCH_SIZE>(delta_noact, delta);
+    //printf("backward delta %f %f %f\n", delta_noact[0], delta_noact[1], delta_noact[2]);
+    // printf("backward delta  "); 
+    // for (int i = 0; i < OUTPUT_DIM * BATCH_SIZE; i++) {
+    //     printf("%f ", delta_noact[i]);
+    // }
+    // printf("\n");
     StreamUtil::tostream<OUTPUT_DIM>(delta_noact, delta, BATCH_SIZE);
 }
 
@@ -291,9 +299,9 @@ void update(hls::stream<T> &deltas, T *weights, T *biases, hls::stream<T> &this_
 
     Matrix::blockmatmul<INPUT_DIM, BATCH_SIZE, OUTPUT_DIM, PE1, PE2, PE3, float, PII>(input_buffer, delta_buffer, gradients);
 
-    //printf("inputs: %f %f %f\n", input_buffer[0], input_buffer[1], input_buffer[2]);
-    //printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
-    //printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
+    // printf("inputs: %f %f %f\n", input_buffer[0], input_buffer[1], input_buffer[2]);
+    // printf("deltas: %f %f %f\n", delta_buffer[0], delta_buffer[1], delta_buffer[2]);
+    // printf("gradients: %f %f %f\n", gradients[0]/BATCH_SIZE, gradients[1]/BATCH_SIZE, gradients[2]/BATCH_SIZE);
 
     // printf("Sizes: BS %d, IN %d, OUT %d\n", BATCH_SIZE, INPUT_DIM, OUTPUT_DIM);
     // printf("inputs\n");
@@ -436,6 +444,11 @@ adam_weights_loop : for (int i = 0; i < INPUT_DIM; i++) {
             float mhat = newm / (1 - beta1t);
             float vhat = newv / (1 - beta2t);
             float grad = mhat / (sqrtf(vhat) + eps);
+
+            // if (i == 0 && j == 0) {
+            //     printf("grad: %f, beta1t: %f, beta2t: %f, g: %f\n", grad, beta1t, beta2t, g);
+            // }
+
             weights[j * INPUT_DIM + i] -= learning_rate * grad;
             m[i * OUTPUT_DIM + j] = newm;
             v[i * OUTPUT_DIM + j] = newv;
@@ -450,13 +463,15 @@ adam_bias_loop : for (int i = 0; i < OUTPUT_DIM; i++) {
         float mhat = newmb / (1 - beta1t);
         float vhat = newvb / (1 - beta2t);
         float grad = mhat / (sqrtf(vhat) + eps);
-        biases[i] -= learning_rate * grad;
+        float bias_tmp = (float)biases[i];
+        biases[i] = ((float)bias_tmp) - (float)(learning_rate * grad);
         mb[i] = newmb;
         vb[i] = newvb;
     }
 
     beta1t = beta1t * beta1;
     beta2t = beta2t * beta2;
+    //printf("ADAM: beta1t %f, beta2t %f\n", beta1t, beta2t);
 } 
 
 template<int INPUT_DIM, int OUTPUT_DIM, int BATCH_SIZE, typename T, int PE1, int PE2, int PE3, int PII=100>
