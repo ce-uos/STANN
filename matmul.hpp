@@ -116,37 +116,6 @@ void blockmatmul(T *a, T *b, T*c) {
 #pragma HLS inline off
 
     T bufferC[BK * BN];
-    //#pragma HLS ARRAY_PARTITION variable=bufferC complete
-
-    // for (int k = 0; k < K; k += BK) {
-    //     for (int n = 0; n < N; n += BN) {
-    //         for (int m = 0; m < M; m += BM) {
-    //             #pragma HLS pipeline II=20
-    //             if (m == 0) {
-    //                 zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
-    //             }
-    //             compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k, m, n);
-    //             if (m == M-1) {
-    //                 storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k, n);
-    //             }
-    //         }
-    //     }
-    // }
-
-    // int k = 0;
-    // int m = 0;
-    // int n = 0;
-    // for (int i = 0; i < (K/BK) * (N/BN) * (M/BM); i++) {
-    //     if (m == 0) {
-    //         zeroc<K,M,N,BK,BM,BN,T,PII>(bufferC);
-    //     }
-    //     compute_unit<K,M,N,BK,BM,BN,T,PII>(a, b, bufferC, k, m, n);
-    //     if (m == M-1) {
-    //         storec<K,M,N,BK,BM,BN,T,PII>(bufferC, c, k, n);
-    //     }
-    //
-    //     k += 1;
-    // }
 bmm_loop_k: for (int k = 0; k < K/BK; k += 1) {
     bmm_loop_n: for (int n = 0; n < N/BN; n += 1) {
         bmm_loop_m: for (int m = 0; m < M/BM; m += 1) {
@@ -162,6 +131,10 @@ bmm_loop_k: for (int k = 0; k < K/BK; k += 1) {
         }
     }
 }
+
+} // namespace new
+
+namespace Quantized {
 /**
  * Systolic array based quantized matrix multiplication.
  * Systolic array will have size MxN.
@@ -384,6 +357,8 @@ void blockmatmul_quantized(ap_uint<8> *a, ap_uint<8> *b, ap_uint<8>*c, ap_uint<3
     }
 
 }
+
+} // namespace quantized
 
 /**
  * Namespace for basic implementations of matrix operations.
@@ -1214,8 +1189,7 @@ void blockmatmul_quantized(ap_uint<8> *a, ap_uint<8> *b, ap_uint<8>*c, ap_uint<3
 
 } // namespace SysArr
 
-}
-
+} // namespace Matrix Util
 
 /**
  * Namespace for matrix multiplication using streams.
@@ -1251,7 +1225,7 @@ void blockmatmul_full(T *a, hls::stream<T> &b, hls::stream<T> &c, int reps) {
 
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<M * N>(b, b_buffer, 1);
-        MatrixUtil::SysArr::blockmatmul<K,M,N,BK,BM,BN,T,PII>(a, b_buffer, c_buffer);
+        MatrixUtil::New::blockmatmul<K,M,N,BK,BM,BN,T,PII>(a, b_buffer, c_buffer);
         StreamUtil::tostream<K>(c_buffer, c, 1);
     }
 }
@@ -1332,7 +1306,7 @@ void blockmatmul_quantized(ap_uint<8> *a, hls::stream<ap_uint<8>> &b, hls::strea
 
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<M, ap_uint<8>>(b, b_buffer, 1);
-        MatrixUtil::SysArr::blockmatmul_quantized<K,M,1,BK,BM,1,PII>(a, b_buffer, c_buffer,bias,m,n,z1,z2,z3);
+        MatrixUtil::Quantized::blockmatmul_quantized<K,M,1,BK,BM,1,PII>(a, b_buffer, c_buffer,bias,m,n,z1,z2,z3);
         StreamUtil::tostream<K, ap_uint<8>>(c_buffer, c, 1);
     }
 }
@@ -1364,7 +1338,7 @@ void blockmatmul(hls::stream<T> &a, T *b, hls::stream<T> &c, int reps) {
 
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<K*M>(a, a_buffer, 1);
-        MatrixUtil::SysArr::blockmatmul<K,M,1,BK,BM,1,T,PII>(a_buffer, b, c_buffer);
+        MatrixUtil::New::blockmatmul<K,M,1,BK,BM,1,T,PII>(a_buffer, b, c_buffer);
         StreamUtil::tostream<K>(c_buffer, c, 1);
     }
 }

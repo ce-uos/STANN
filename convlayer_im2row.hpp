@@ -215,7 +215,7 @@ void conv_base_quantized(hls::stream<ap_uint<8>> &input, ap_uint<8> *kernel, hls
 
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<KERNEL_SIZE*KERNEL_SIZE*INPUT_CHANNELS*OUTPUT_WI*OUTPUT_HI, ap_uint<8>>(input, input_buffer, 1);
-        Matrix::blockmatmul_quantized<OUTPUT_CHANNELS,KERNEL_SIZE*KERNEL_SIZE*INPUT_CHANNELS,OUTPUT_WI*OUTPUT_HI,PE1,PE2,PE3,5>(kernel, input_buffer, output_buffer, biases, m, n, z1, z2, z3);
+        MatrixUtil::Quantized::blockmatmul_quantized<OUTPUT_CHANNELS,KERNEL_SIZE*KERNEL_SIZE*INPUT_CHANNELS,OUTPUT_WI*OUTPUT_HI,PE1,PE2,PE3,5>(kernel, input_buffer, output_buffer, biases, m, n, z1, z2, z3);
 
         StreamUtil::tostream<OUTPUT_WI * OUTPUT_HI * OUTPUT_CHANNELS, ap_uint<8>>(output_buffer, output, 1);
 

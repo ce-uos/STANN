@@ -69,7 +69,7 @@ void conv_mult(hls::stream<float> &input, hls::stream<float> &kernel, hls::strea
         StreamUtil::toarray<INPUT_WIDTH*INPUT_HEIGHT*INPUT_CHANNELS>(input, input_buffer, 1);
         for (int k = 0; k < 9; k++) {
             StreamUtil::toarray<INPUT_CHANNELS*OUTPUT_CHANNELS>(kernel, kernel_buffer, 1);
-            MatrixUtil::SysArr::blockmatmul<OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(kernel_buffer, input_buffer, output_buffer);
+            MatrixUtil::New::blockmatmul<OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(kernel_buffer, input_buffer, output_buffer);
             StreamUtil::tostream<OUTPUT_CHANNELS*INPUT_HEIGHT*INPUT_WIDTH>(output_buffer, output_stream);
         }
     }
@@ -174,7 +174,7 @@ void conv_base(hls::stream<float> &input, float *kernel, hls::stream<float> &out
         for (int ky = 0; ky < KERNEL_SIZE; ky++) {
             for (int kx = 0; kx < KERNEL_SIZE; kx++) {
                 const int k = ky * KERNEL_SIZE + kx;
-                MatrixUtil::SysArr::blockmatmul<OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(&kernel[k * INPUT_CHANNELS * OUTPUT_CHANNELS], input_buffer, output_buffer);
+                MatrixUtil::New::blockmatmul<OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(&kernel[k * INPUT_CHANNELS * OUTPUT_CHANNELS], input_buffer, output_buffer);
 
                 for (int m = 0; m < OUTPUT_CHANNELS; m++) {
                     for (int w = 0; w < INPUT_WIDTH-KSUB; w++) {
@@ -222,7 +222,7 @@ void conv_base2(hls::stream<float> &input, float *kernel, hls::stream<float> &ou
 
     for (int r = 0; r < reps; r++) {
         StreamUtil::toarray<INPUT_WIDTH*INPUT_HEIGHT*INPUT_CHANNELS>(input, input_buffer, 1);
-        MatrixUtil::SysArr::blockmatmul<KERNEL_SIZE * KERNEL_SIZE * OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(kernel, input_buffer, output_buffer);
+        MatrixUtil::New::blockmatmul<KERNEL_SIZE * KERNEL_SIZE * OUTPUT_CHANNELS, INPUT_CHANNELS, INPUT_WIDTH*INPUT_HEIGHT,PE1,PE2,PE3,float,80>(kernel, input_buffer, output_buffer);
 
         for (int ky = 0; ky < KERNEL_SIZE; ky++) {
             for (int kx = 0; kx < KERNEL_SIZE; kx++) {
