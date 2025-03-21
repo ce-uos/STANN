@@ -238,6 +238,33 @@ void average_backward_base(T *input,T *output) {
 
 namespace Float {
 
+template<int INPUT_WIDTH, int OUTPUT_WIDTH, int KERNEL_WIDTH, int STRIDE, typename T>
+void maxpool1d(hls::stream<T> &input, hls::stream<T> &output, int reps){
+	T max_val = 0;
+	T input_buffer[INPUT_WIDTH];
+	T output_buffer[OUTPUT_WIDTH];
+
+    StreamUtil::toarray<INPUT_WIDTH, T>(input, input_buffer, 1);
+
+	for(int i = 0; i < OUTPUT_WIDTH; i++){
+#pragma HLS PIPELINE II=1
+		for(int j = 0; j < KERNEL_WIDTH; j++){
+#pragma HLS UNROLL
+			if(j == 0){
+				max_val = input_buffer[i * STRIDE];
+			}
+			if(input_buffer[i * STRIDE + j] > max_val){
+				max_val = input_buffer[i * STRIDE + j];
+			}
+			if(j == KERNEL_WIDTH - 1){
+				output_buffer[i] = max_val;
+			}
+		}
+	}
+
+    StreamUtil::tostream<OUTPUT_WIDTH, T>(output_buffer, output, 1);
+}
+
 /** 
  * Max pooling.
  *
